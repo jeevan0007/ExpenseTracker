@@ -1,5 +1,9 @@
 package com.jeevan.expensetracker
 
+import android.app.DatePickerDialog
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import java.util.*
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.widget.ArrayAdapter
@@ -82,6 +86,11 @@ class MainActivity : AppCompatActivity() {
             showSetBudgetDialog()
         }
 
+        // Date Filter Button
+        val btnDateFilter = findViewById<Button>(R.id.btnDateFilter)
+        btnDateFilter.setOnClickListener {
+            showDateFilterDialog()
+        }
         // View Charts Button
         findViewById<Button>(R.id.btnViewCharts).setOnClickListener {
             val intent = android.content.Intent(this, ChartsActivity::class.java)
@@ -313,6 +322,128 @@ class MainActivity : AppCompatActivity() {
                     .show()
             }
         }
+    }
+    private fun showDateFilterDialog() {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_date_filter, null)
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+
+        val radioGroup = dialogView.findViewById<RadioGroup>(R.id.radioGroupDateFilter)
+        val btnApply = dialogView.findViewById<Button>(R.id.btnApplyDateFilter)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancelDateFilter)
+
+        btnApply.setOnClickListener {
+            val selectedId = radioGroup.checkedRadioButtonId
+            val calendar = Calendar.getInstance()
+
+            when (selectedId) {
+                R.id.radioAllTime -> {
+                    expenseViewModel.clearDateFilter()
+                    findViewById<Button>(R.id.btnDateFilter).text = "All Time"
+                }
+                R.id.radioToday -> {
+                    val startOfDay = calendar.apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+
+                    val endOfDay = calendar.apply {
+                        set(Calendar.HOUR_OF_DAY, 23)
+                        set(Calendar.MINUTE, 59)
+                        set(Calendar.SECOND, 59)
+                    }.timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(startOfDay, endOfDay)
+                    findViewById<Button>(R.id.btnDateFilter).text = "Today"
+                }
+                R.id.radioThisWeek -> {
+                    calendar.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
+                    val startOfWeek = calendar.apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                    }.timeInMillis
+
+                    val endOfWeek = Calendar.getInstance().timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(startOfWeek, endOfWeek)
+                    findViewById<Button>(R.id.btnDateFilter).text = "This Week"
+                }
+                R.id.radioThisMonth -> {
+                    calendar.set(Calendar.DAY_OF_MONTH, 1)
+                    val startOfMonth = calendar.apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                    }.timeInMillis
+
+                    val endOfMonth = Calendar.getInstance().timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(startOfMonth, endOfMonth)
+                    findViewById<Button>(R.id.btnDateFilter).text = "This Month"
+                }
+                R.id.radioLastMonth -> {
+                    calendar.add(Calendar.MONTH, -1)
+                    calendar.set(Calendar.DAY_OF_MONTH, 1)
+                    val startOfLastMonth = calendar.apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                    }.timeInMillis
+
+                    calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+                    val endOfLastMonth = calendar.apply {
+                        set(Calendar.HOUR_OF_DAY, 23)
+                        set(Calendar.MINUTE, 59)
+                        set(Calendar.SECOND, 59)
+                    }.timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(startOfLastMonth, endOfLastMonth)
+                    findViewById<Button>(R.id.btnDateFilter).text = "Last Month"
+                }
+                R.id.radioCustom -> {
+                    dialog.dismiss()
+                    showCustomDateRangePicker()
+                    return@setOnClickListener
+                }
+            }
+
+            dialog.dismiss()
+        }
+
+        btnCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    private fun showCustomDateRangePicker() {
+        val calendar = Calendar.getInstance()
+
+        // Pick start date
+        DatePickerDialog(this, { _, year, month, day ->
+            val startCalendar = Calendar.getInstance().apply {
+                set(year, month, day, 0, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val startDate = startCalendar.timeInMillis
+
+            // Pick end date
+            DatePickerDialog(this, { _, year2, month2, day2 ->
+                val endCalendar = Calendar.getInstance().apply {
+                    set(year2, month2, day2, 23, 59, 59)
+                }
+                val endDate = endCalendar.timeInMillis
+
+                expenseViewModel.setDateRangeFilter(startDate, endDate)
+                findViewById<Button>(R.id.btnDateFilter).text = "Custom"
+            }, year, month, day).show()
+
+        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
     }
 
 }

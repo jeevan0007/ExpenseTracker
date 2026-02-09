@@ -6,6 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background"
+    android:fitsSystemWindows="true"
     tools:context=".MainActivity">
 
     <!-- Header Card -->
@@ -68,12 +69,14 @@
 
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Filter Section -->
+    <!-- Modern Filter Section -->
     <com.google.android.material.card.MaterialCardView
-        android:id="@+id/filterSection"
+        android:id="@+id/filterCard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_margin="16dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="8dp"
         app:cardElevation="2dp"
         app:cardCornerRadius="12dp"
         app:layout_constraintTop_toBottomOf="@id/headerCard">
@@ -82,47 +85,62 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:padding="16dp"
+            android:padding="12dp"
             android:gravity="center_vertical">
 
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@android:drawable/ic_menu_sort_by_size"
-                android:layout_marginEnd="12dp"
-                android:contentDescription="Filter icon"/>
-
+            <!-- Category Filter -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginEnd="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📂 Category"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/purple_700"
+                    android:layout_marginBottom="4dp"/>
+
+                <Spinner
+                    android:id="@+id/spinnerCategoryFilter"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:background="@android:drawable/btn_dropdown"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"/>
+
+            </LinearLayout>
+
+            <!-- Date Filter Button -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:orientation="vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Category"
+                    android:text="📅 Date"
                     android:textSize="12sp"
-                    android:textColor="@android:color/darker_gray"/>
+                    android:textStyle="bold"
+                    android:textColor="@color/purple_700"
+                    android:layout_marginBottom="4dp"/>
 
-                <Spinner
-                    android:id="@+id/spinnerCategoryFilter"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="32dp"
-                    android:background="@android:color/transparent"
-                    android:spinnerMode="dropdown"/>
+                <Button
+                    android:id="@+id/btnDateFilter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="All Time"
+                    android:textSize="13sp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    style="@style/Widget.Material3.Button.OutlinedButton"/>
 
             </LinearLayout>
-
-            <Button
-                android:id="@+id/btnDateFilter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="📅 Date"
-                android:textSize="14sp"
-                android:layout_marginStart="8dp"
-                style="@style/Widget.Material3.Button.TonalButton"/>
 
         </LinearLayout>
 
@@ -133,8 +151,12 @@
         android:id="@+id/rvExpenses"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_margin="16dp"
-        app:layout_constraintTop_toBottomOf="@id/filterSection"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="16dp"
+        android:paddingBottom="80dp"
+        android:clipToPadding="false"
+        app:layout_constraintTop_toBottomOf="@id/filterCard"
         app:layout_constraintBottom_toBottomOf="parent"/>
 
     <!-- Floating Action Button -->
