@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">Expense Tracker</string>
+    <string name="add_expense">Add Expense</string>
+    <string name="amount">Amount</string>
+    <string name="description">Description</string>
+    <string name="category">Category</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="total_expenses">Total Expenses</string>
+    <string name="budget">Budget</string>
+    <string name="set_budget">Set Budget</string>
+    <string name="view_charts">View Charts</string>
+
+    <string-array name="categories">
+        <item>Food</item>
+        <item>Transport</item>
+        <item>Shopping</item>
+        <item>Entertainment</item>
+        <item>Bills</item>
+        <item>Healthcare</item>
+        <item>Other</item>
+    </string-array>
+    <string name="all_categories">All Categories</string>
+    <string name="filter">Filter</string>
+</resources>
