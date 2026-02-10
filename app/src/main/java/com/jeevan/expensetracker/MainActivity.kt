@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
@@ -31,6 +32,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // Load saved theme
+        loadSavedTheme()
 
         // Load saved budget
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
@@ -95,6 +98,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnViewCharts).setOnClickListener {
             val intent = android.content.Intent(this, ChartsActivity::class.java)
             startActivity(intent)
+        }
+        // Theme Toggle Button
+        val btnToggleTheme = findViewById<Button>(R.id.btnToggleTheme)
+        updateThemeButtonText(btnToggleTheme)
+
+        btnToggleTheme.setOnClickListener {
+            toggleTheme(btnToggleTheme)
         }
     }
 
@@ -444,6 +454,39 @@ class MainActivity : AppCompatActivity() {
             }, year, month, day).show()
 
         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
+    }
+    private fun toggleTheme(button: Button) {
+        val currentMode = AppCompatDelegate.getDefaultNightMode()
+        val newMode = if (currentMode == AppCompatDelegate.MODE_NIGHT_YES) {
+            AppCompatDelegate.MODE_NIGHT_NO
+        } else {
+            AppCompatDelegate.MODE_NIGHT_YES
+        }
+
+        // Save preference
+        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        with(sharedPref.edit()) {
+            putInt("theme_mode", newMode)
+            apply()
+        }
+
+        // Apply theme
+        AppCompatDelegate.setDefaultNightMode(newMode)
+    }
+
+    private fun updateThemeButtonText(button: Button) {
+        val currentMode = AppCompatDelegate.getDefaultNightMode()
+        button.text = if (currentMode == AppCompatDelegate.MODE_NIGHT_YES) {
+            "☀️ Light Mode"
+        } else {
+            "🌙 Dark Mode"
+        }
+    }
+
+    private fun loadSavedTheme() {
+        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        val savedTheme = sharedPref.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        AppCompatDelegate.setDefaultNightMode(savedTheme)
     }
 
 }

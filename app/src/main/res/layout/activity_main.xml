@@ -65,6 +65,15 @@
                     android:layout_marginStart="8dp"/>
             </LinearLayout>
 
+            <!-- Theme Toggle Button -->
+            <Button
+                android:id="@+id/btnToggleTheme"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="🌙 Dark Mode"
+                style="@style/Widget.Material3.Button.OutlinedButton"/>
+
         </LinearLayout>
 
     </com.google.android.material.card.MaterialCardView>
