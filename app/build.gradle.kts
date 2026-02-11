@@ -16,7 +16,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
     }
+    buildFeatures {
+        viewBinding = true
+    }
+
+
 
     buildTypes {
         release {
@@ -43,6 +49,10 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
+    // Lottie for smooth animations
+    implementation("com.airbnb.android:lottie:6.1.0")
+// View binding for cleaner code
+   // implementation("androidx.viewbinding:viewbinding:8.2.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

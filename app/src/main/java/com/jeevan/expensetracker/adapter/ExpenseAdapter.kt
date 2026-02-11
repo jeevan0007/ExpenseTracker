@@ -3,6 +3,7 @@ package com.jeevan.expensetracker.adapter
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AnimationUtils
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.R
@@ -16,8 +17,10 @@ class ExpenseAdapter(
 ) : RecyclerView.Adapter<ExpenseAdapter.ExpenseViewHolder>() {
 
     private var expenses = emptyList<Expense>()
+    private var lastPosition = -1
 
     class ExpenseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val tvCategoryIcon: TextView = itemView.findViewById(R.id.tvCategoryIcon)
         val tvCategory: TextView = itemView.findViewById(R.id.tvCategory)
         val tvDescription: TextView = itemView.findViewById(R.id.tvDescription)
         val tvDate: TextView = itemView.findViewById(R.id.tvDate)
@@ -32,6 +35,10 @@ class ExpenseAdapter(
 
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
+
+        // Get emoji for category
+        val emoji = getCategoryEmoji(currentExpense.category)
+        holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
         holder.tvDescription.text = currentExpense.description
         holder.tvAmount.text = "₹${String.format("%.2f", currentExpense.amount)}"
@@ -50,12 +57,38 @@ class ExpenseAdapter(
         holder.itemView.setOnClickListener {
             onItemClick(currentExpense)
         }
+
+        // Smooth slide-up animation
+        setAnimation(holder.itemView, position)
+    }
+
+    private fun setAnimation(viewToAnimate: View, position: Int) {
+        // If the bound view wasn't previously displayed on screen, it's animated
+        if (position > lastPosition) {
+            val animation = AnimationUtils.loadAnimation(viewToAnimate.context, R.anim.slide_up_fade_in)
+            viewToAnimate.startAnimation(animation)
+            lastPosition = position
+        }
+    }
+
+    private fun getCategoryEmoji(category: String): String {
+        return when (category) {
+            "Food" -> "🍔"
+            "Transport" -> "🚗"
+            "Shopping" -> "🛍️"
+            "Entertainment" -> "🎬"
+            "Bills" -> "💡"
+            "Healthcare" -> "🏥"
+            "Other" -> "📌"
+            else -> "💰"
+        }
     }
 
     override fun getItemCount() = expenses.size
 
     fun setExpenses(expenses: List<Expense>) {
         this.expenses = expenses
+        lastPosition = -1  // Reset animation position
         notifyDataSetChanged()
     }
 }

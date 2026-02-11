@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Inverted base colors for dark mode -->
     <color name="black">#FFFFFFFF</color>
-    <color name="white">#FF000000</color>
+    <color name="white">#FF121212</color>
     <color name="background">#121212</color>
+
+    <!-- Lighter/brighter colors for dark mode -->
     <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
+    <color name="purple_500">#FFB388FF</color>
+    <color name="purple_700">#FFBB86FC</color>
     <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="red">#FFF44336</color>
-    <color name="green">#FF4CAF50</color>
-    <color name="blue">#FF2196F3</color>
-    <color name="orange">#FFFF9800</color>
+    <color name="teal_700">#FF03DAC5</color>
+
+    <!-- Brighter accent colors for dark mode -->
+    <color name="red">#FFEF5350</color>
+    <color name="green">#FF66BB6A</color>
+    <color name="blue">#FF42A5F5</color>
+    <color name="orange">#FFFFB74D</color>
 </resources>

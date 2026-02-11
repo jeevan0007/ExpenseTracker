@@ -1,6 +1,8 @@
 package com.jeevan.expensetracker
 
 import android.app.DatePickerDialog
+import android.view.animation.AnimationUtils
+import android.view.animation.Animation
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import java.util.*
@@ -78,9 +80,28 @@ class MainActivity : AppCompatActivity() {
             tvTotalAmount.text = "₹${String.format("%.2f", total ?: 0.0)}"
         }
 
-        // Floating Action Button - Add Expense
+        // Floating Action Button - Add Expense with animation
         val fabAddExpense = findViewById<FloatingActionButton>(R.id.fabAddExpense)
+
+// Scale animation on the FAB
+        val scaleAnimation = AnimationUtils.loadAnimation(this, R.anim.scale_bounce)
+        fabAddExpense.startAnimation(scaleAnimation)
+
         fabAddExpense.setOnClickListener {
+            // Press animation
+            it.animate()
+                .scaleX(0.9f)
+                .scaleY(0.9f)
+                .setDuration(100)
+                .withEndAction {
+                    it.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(100)
+                        .start()
+                }
+                .start()
+
             showAddExpenseDialog()
         }
 
@@ -98,6 +119,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnViewCharts).setOnClickListener {
             val intent = android.content.Intent(this, ChartsActivity::class.java)
             startActivity(intent)
+            overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
         }
         // Theme Toggle Button
         val btnToggleTheme = findViewById<Button>(R.id.btnToggleTheme)
