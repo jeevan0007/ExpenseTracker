@@ -15,4 +15,9 @@
         <item name="android:statusBarColor">@color/purple_500</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+    <!-- Dialog Animation Style -->
+    <style name="DialogAnimation">
+        <item name="android:windowEnterAnimation">@anim/scale_bounce</item>
+        <item name="android:windowExitAnimation">@android:anim/fade_out</item>
+    </style>
 </resources>

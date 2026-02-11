@@ -1,5 +1,8 @@
 package com.jeevan.expensetracker
 
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.content.Context
 import android.app.DatePickerDialog
 import android.view.animation.AnimationUtils
 import android.view.animation.Animation
@@ -88,6 +91,7 @@ class MainActivity : AppCompatActivity() {
         fabAddExpense.startAnimation(scaleAnimation)
 
         fabAddExpense.setOnClickListener {
+            vibratePhone()
             // Press animation
             it.animate()
                 .scaleX(0.9f)
@@ -107,6 +111,7 @@ class MainActivity : AppCompatActivity() {
 
         // Set Budget Button
         findViewById<Button>(R.id.btnSetBudget).setOnClickListener {
+            vibratePhone()
             showSetBudgetDialog()
         }
 
@@ -117,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         }
         // View Charts Button
         findViewById<Button>(R.id.btnViewCharts).setOnClickListener {
+            vibratePhone()
             val intent = android.content.Intent(this, ChartsActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
@@ -136,6 +142,8 @@ class MainActivity : AppCompatActivity() {
             .setView(dialogView)
             .create()
 
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
         // Get views from dialog
         val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
         val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
@@ -151,6 +159,7 @@ class MainActivity : AppCompatActivity() {
 
         // Save button click
         btnSave.setOnClickListener {
+            vibratePhone()
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
             val category = spinnerCategory.selectedItem.toString()
@@ -195,7 +204,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDeleteDialog(expense: Expense) {
-        AlertDialog.Builder(this)
+        val deleteDialog = AlertDialog.Builder(this)
             .setTitle("Delete Expense")
             .setMessage("Are you sure you want to delete this expense?\n\n${expense.description} - ₹${String.format("%.2f", expense.amount)}")
             .setPositiveButton("Delete") { _, _ ->
@@ -203,7 +212,11 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Expense deleted", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+
+        deleteDialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+        deleteDialog.show()
+
     }
 
     private fun showEditDialog(expense: Expense) {
@@ -211,6 +224,8 @@ class MainActivity : AppCompatActivity() {
         val dialog = AlertDialog.Builder(this)
             .setView(dialogView)
             .create()
+
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation  // ADD THIS LINE
 
         // Get views from dialog
         val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
@@ -287,6 +302,8 @@ class MainActivity : AppCompatActivity() {
             .setView(dialogView)
             .create()
 
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation  // ADD THIS LINE
+
         val etBudget = dialogView.findViewById<TextInputEditText>(R.id.etBudget)
         val btnSave = dialogView.findViewById<Button>(R.id.btnSaveBudget)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancelBudget)
@@ -340,18 +357,24 @@ class MainActivity : AppCompatActivity() {
 
         when {
             percentage >= 100 -> {
-                AlertDialog.Builder(this)
+                val exceededDialog = AlertDialog.Builder(this)
                     .setTitle("⚠️ Budget Exceeded!")
                     .setMessage("You have exceeded your monthly budget!\n\nBudget: ₹${String.format("%.2f", monthlyBudget)}\nSpent: ₹${String.format("%.2f", currentTotal)}\nOver by: ₹${String.format("%.2f", currentTotal - monthlyBudget)}")
                     .setPositiveButton("OK", null)
-                    .show()
+                    .create()
+
+                exceededDialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+                exceededDialog.show()
             }
             percentage >= 80 -> {
-                AlertDialog.Builder(this)
+                val warningDialog = AlertDialog.Builder(this)
                     .setTitle("⚠️ Budget Warning")
                     .setMessage("You have used ${String.format("%.0f", percentage)}% of your monthly budget.\n\nBudget: ₹${String.format("%.2f", monthlyBudget)}\nSpent: ₹${String.format("%.2f", currentTotal)}\nRemaining: ₹${String.format("%.2f", monthlyBudget - currentTotal)}")
                     .setPositiveButton("OK", null)
-                    .show()
+                    .create()
+
+                warningDialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+                warningDialog.show()
             }
         }
     }
@@ -360,6 +383,8 @@ class MainActivity : AppCompatActivity() {
         val dialog = AlertDialog.Builder(this)
             .setView(dialogView)
             .create()
+
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation  // ADD THIS LINE
 
         val radioGroup = dialogView.findViewById<RadioGroup>(R.id.radioGroupDateFilter)
         val btnApply = dialogView.findViewById<Button>(R.id.btnApplyDateFilter)
@@ -497,6 +522,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateThemeButtonText(button: Button) {
+        vibratePhone()
         val currentMode = AppCompatDelegate.getDefaultNightMode()
         button.text = if (currentMode == AppCompatDelegate.MODE_NIGHT_YES) {
             "☀️ Light Mode"
@@ -510,5 +536,15 @@ class MainActivity : AppCompatActivity() {
         val savedTheme = sharedPref.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         AppCompatDelegate.setDefaultNightMode(savedTheme)
     }
-
+    private fun vibratePhone() {
+        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (vibrator.hasVibrator()) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(50)
+            }
+        }
+    }
 }
