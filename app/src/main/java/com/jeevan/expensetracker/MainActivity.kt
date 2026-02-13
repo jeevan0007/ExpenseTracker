@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
         val filterCategories = mutableListOf("All Categories")
         filterCategories.addAll(resources.getStringArray(R.array.categories))
         val filterAdapter = ArrayAdapter(this, R.layout.spinner_item, filterCategories)
-        filterAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        filterAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
         spinnerCategoryFilter.adapter = filterAdapter
 
         spinnerCategoryFilter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         // Date Filter Button
         val btnDateFilter = findViewById<Button>(R.id.btnDateFilter)
         btnDateFilter.setOnClickListener {
+            vibratePhone()
             showDateFilterDialog()
         }
         // View Charts Button

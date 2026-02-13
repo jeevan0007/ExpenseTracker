@@ -12,4 +12,7 @@
     <color name="blue">#FF2196F3</color>
     <color name="orange">#FFFF9800</color>
     <color name="background">#FFF5F5F5</color>
+    <!-- Glassmorphism colors -->
+    <color name="glass_light">#E6FFFFFF</color>
+    <color name="glass_border">#33FFFFFF</color>
 </resources>
