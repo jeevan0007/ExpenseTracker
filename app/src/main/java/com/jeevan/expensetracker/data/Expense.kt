@@ -11,5 +11,7 @@ data class Expense(
     val amount: Double,
     val category: String,
     val description: String,
-    val date: Long = Date().time
+    val date: Long = Date().time,
+    val type: String = "Expense",
+    val isRecurring: Boolean = false // NEW: Tracks subscriptions
 )

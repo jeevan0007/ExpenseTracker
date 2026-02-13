@@ -1,9 +1,11 @@
 package com.jeevan.expensetracker.adapter
 
+import android.graphics.Color
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AnimationUtils
+import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.R
@@ -36,37 +38,71 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
-        // Get emoji for category
         val emoji = getCategoryEmoji(currentExpense.category)
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
-        holder.tvDescription.text = currentExpense.description
-        holder.tvAmount.text = "₹${String.format("%.2f", currentExpense.amount)}"
 
-        // Format date
+        if (currentExpense.isRecurring) {
+            holder.tvDescription.text = "🔄 ${currentExpense.description}"
+        } else {
+            holder.tvDescription.text = currentExpense.description
+        }
+
+        if (currentExpense.type == "Income") {
+            holder.tvAmount.text = "+ ₹${String.format("%.2f", currentExpense.amount)}"
+            holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
+        } else {
+            holder.tvAmount.text = "- ₹${String.format("%.2f", currentExpense.amount)}"
+            holder.tvAmount.setTextColor(Color.parseColor("#D32F2F"))
+        }
+
         val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
         holder.tvDate.text = dateFormat.format(Date(currentExpense.date))
 
-        // Long click to delete
+        // ULTRA PREMIUM FEATURE 1: Squish & Spring Touch Physics
+        holder.itemView.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().scaleX(0.94f).scaleY(0.94f).setDuration(150).start()
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(300)
+                        .setInterpolator(OvershootInterpolator(2f)).start()
+                }
+            }
+            false // Pass on to click listeners
+        }
+
         holder.itemView.setOnLongClickListener {
             onItemLongClick(currentExpense)
             true
         }
 
-        // Click to edit
         holder.itemView.setOnClickListener {
             onItemClick(currentExpense)
         }
 
-        // Smooth slide-up animation
-        setAnimation(holder.itemView, position)
+        setPremiumEntranceAnimation(holder.itemView, position)
     }
 
-    private fun setAnimation(viewToAnimate: View, position: Int) {
-        // If the bound view wasn't previously displayed on screen, it's animated
+    // ULTRA PREMIUM FEATURE 2: Staggered Spring Cascade
+    private fun setPremiumEntranceAnimation(viewToAnimate: View, position: Int) {
         if (position > lastPosition) {
-            val animation = AnimationUtils.loadAnimation(viewToAnimate.context, R.anim.slide_up_fade_in)
-            viewToAnimate.startAnimation(animation)
+            viewToAnimate.translationY = 150f
+            viewToAnimate.alpha = 0f
+            viewToAnimate.scaleX = 0.8f
+            viewToAnimate.scaleY = 0.8f
+
+            viewToAnimate.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setInterpolator(OvershootInterpolator(1.8f)) // Bouncy overshoot
+                .setDuration(500)
+                .setStartDelay((position * 40).toLong()) // Staggered domino effect
+                .start()
+
             lastPosition = position
         }
     }
@@ -79,6 +115,8 @@ class ExpenseAdapter(
             "Entertainment" -> "🎬"
             "Bills" -> "💡"
             "Healthcare" -> "🏥"
+            "Automated" -> "🤖"
+            "Salary" -> "💵"
             "Other" -> "📌"
             else -> "💰"
         }
@@ -88,7 +126,7 @@ class ExpenseAdapter(
 
     fun setExpenses(expenses: List<Expense>) {
         this.expenses = expenses
-        lastPosition = -1  // Reset animation position
+        lastPosition = -1  // Reset animation state
         notifyDataSetChanged()
     }
 }

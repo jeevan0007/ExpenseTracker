@@ -8,6 +8,7 @@ class ExpenseRepository(private val expenseDao: ExpenseDao) {
 
     val allExpenses: LiveData<List<Expense>> = expenseDao.getAllExpenses()
     val totalExpenses: LiveData<Double> = expenseDao.getTotalExpenses()
+    val totalIncome: LiveData<Double> = expenseDao.getTotalIncome() // NEW
 
     suspend fun insert(expense: Expense) {
         expenseDao.insert(expense)
