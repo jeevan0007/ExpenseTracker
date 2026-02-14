@@ -35,7 +35,7 @@
                     android:layout_height="wrap_content"
                     android:text="Total Balance"
                     android:textSize="16sp"
-                    android:textColor="@color/black"/>
+                    android:textColor="?attr/colorOnSurface"/>
 
                 <TextView
                     android:id="@+id/tvBalanceAmount"
@@ -44,7 +44,7 @@
                     android:text="₹0.00"
                     android:textSize="36sp"
                     android:textStyle="bold"
-                    android:textColor="@color/black"
+                    android:textColor="?attr/colorOnSurface"
                     android:layout_marginTop="4dp"/>
 
                 <LinearLayout
@@ -62,7 +62,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="⬇ Income"
-                            android:textColor="#388E3C"
+                            android:textColor="@color/green"
                             android:textStyle="bold"/>
                         <TextView
                             android:id="@+id/tvIncomeAmount"
@@ -70,7 +70,7 @@
                             android:layout_height="wrap_content"
                             android:text="₹0.00"
                             android:textSize="18sp"
-                            android:textColor="@color/black"
+                            android:textColor="?attr/colorOnSurface"
                             android:textStyle="bold"/>
                     </LinearLayout>
 
@@ -83,7 +83,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="⬆ Expense"
-                            android:textColor="#D32F2F"
+                            android:textColor="@color/red"
                             android:textStyle="bold"/>
                         <TextView
                             android:id="@+id/tvExpenseAmount"
@@ -91,7 +91,7 @@
                             android:layout_height="wrap_content"
                             android:text="₹0.00"
                             android:textSize="18sp"
-                            android:textColor="@color/black"
+                            android:textColor="?attr/colorOnSurface"
                             android:textStyle="bold"/>
                     </LinearLayout>
                 </LinearLayout>
@@ -186,10 +186,12 @@
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
                     android:background="@drawable/spinner_background"
-                    android:hint="🔍 Search transactions..."
+                    android:hint="Search transactions"
                     android:paddingStart="16dp"
                     android:paddingEnd="16dp"
                     android:textSize="14sp"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textColorHint="?attr/colorOnSurfaceVariant"
                     android:inputType="text"
                     android:maxLines="1"
                     android:layout_marginBottom="12dp"/>
@@ -213,7 +215,7 @@
                             android:text="🏷 Category"
                             android:textSize="12sp"
                             android:textStyle="bold"
-                            android:textColor="@color/purple_700"
+                            android:textColor="?attr/colorOnSurface"
                             android:layout_marginBottom="4dp"/>
 
                         <Spinner
@@ -238,7 +240,7 @@
                             android:text="📅 Date"
                             android:textSize="12sp"
                             android:textStyle="bold"
-                            android:textColor="@color/purple_700"
+                            android:textColor="?attr/colorOnSurface"
                             android:layout_marginBottom="4dp"/>
 
                         <Button
@@ -263,11 +265,27 @@
         android:text="Showing: All Time"
         android:textSize="14sp"
         android:textStyle="bold"
-        android:textColor="?android:attr/textColorSecondary"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:layout_marginTop="12dp"
         android:layout_marginStart="24dp"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/filterCard"/>
+
+    <TextView
+        android:id="@+id/tvEmptyState"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        android:text="No transactions yet. Tap + to add your first entry."
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="14sp"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/tvDateHeader"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvExpenses"
@@ -278,7 +296,7 @@
         android:layout_marginTop="8dp"
         android:paddingBottom="80dp"
         android:clipToPadding="false"
-        app:layout_constraintTop_toBottomOf="@id/tvDateHeader"
+        app:layout_constraintTop_toBottomOf="@id/tvEmptyState"
         app:layout_constraintBottom_toBottomOf="parent"/>
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -287,6 +305,8 @@
         android:layout_height="wrap_content"
         android:layout_margin="24dp"
         android:src="@android:drawable/ic_input_add"
+        app:backgroundTint="@color/purple_500"
+        app:tint="@android:color/white"
         android:contentDescription="@string/add_expense"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>

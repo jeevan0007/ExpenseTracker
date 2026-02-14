@@ -146,8 +146,12 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
+        val tvEmptyState = findViewById<TextView>(R.id.tvEmptyState)
+
         expenseViewModel.filteredExpenses.observe(this) { expenses ->
-            expenses?.let { adapter.setExpenses(it) }
+            val safeExpenses = expenses ?: emptyList()
+            adapter.setExpenses(safeExpenses)
+            tvEmptyState.visibility = if (safeExpenses.isEmpty()) View.VISIBLE else View.GONE
         }
 
         val tvBalanceAmount = findViewById<TextView>(R.id.tvBalanceAmount)

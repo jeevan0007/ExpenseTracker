@@ -27,6 +27,9 @@ interface ExpenseDao {
     @Query("SELECT category, SUM(amount) as total FROM expense_table WHERE type = 'Expense' GROUP BY category")
     fun getTotalByCategory(): LiveData<List<CategoryTotal>>
 
+    @Query("SELECT COUNT(*) FROM expense_table WHERE amount = :amount AND description = :description AND type = 'Expense' AND date >= :since")
+    fun countRecentAutoExpense(amount: Double, description: String, since: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(expense: Expense)
 

@@ -51,7 +51,7 @@
                 android:text="Food"
                 android:textSize="18sp"
                 android:textStyle="bold"
-                android:textColor="@color/black"/>
+                android:textColor="?attr/colorOnSurface"/>
 
             <TextView
                 android:id="@+id/tvDescription"
@@ -59,7 +59,8 @@
                 android:layout_height="wrap_content"
                 android:text="Lunch at restaurant"
                 android:textSize="14sp"
-                android:alpha="0.7"
+                android:alpha="0.8"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginTop="2dp"/>
 
             <TextView
@@ -68,7 +69,7 @@
                 android:layout_height="wrap_content"
                 android:text="Feb 08, 2026"
                 android:textSize="12sp"
-                android:textColor="@android:color/darker_gray"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginTop="2dp"/>
 
         </LinearLayout>
