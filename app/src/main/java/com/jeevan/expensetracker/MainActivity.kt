@@ -1,50 +1,66 @@
 package com.jeevan.expensetracker
 
+// --- IMPORTS START HERE ---
 import android.Manifest
-import android.animation.ValueAnimator
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.app.DatePickerDialog  // <--- THIS IS THE CRITICAL MISSING LINE
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.provider.Settings
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
+import android.graphics.Color
+import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.content.Context
-import android.app.DatePickerDialog
-import android.graphics.Color
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.MotionEvent
-import android.view.ViewAnimationUtils
-import android.view.animation.OvershootInterpolator
-import android.view.animation.DecelerateInterpolator
-import android.view.View
-import android.view.ViewGroup
-import android.widget.*
-import java.util.*
-import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewAnimationUtils
+import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.RadioGroup
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.appcompat.app.AppCompatDelegate
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricPrompt
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.ExistingPeriodicWorkPolicy
-import java.util.concurrent.TimeUnit
 import com.jeevan.expensetracker.worker.RecurringExpenseWorker
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import kotlin.math.max
+import kotlin.math.min
+// --- IMPORTS END HERE ---
 
 class MainActivity : AppCompatActivity() {
 
@@ -52,12 +68,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: ExpenseAdapter
     private var monthlyBudget: Double = 0.0
 
-    // Trackers for Kinetic Rolling
+    // Animation States
     private var currentIncome: Double = 0.0
     private var currentExpense: Double = 0.0
     private var oldBalanceAnimState: Double = 0.0
     private var oldIncomeAnimState: Double = 0.0
     private var oldExpenseAnimState: Double = 0.0
+
+    // UI Header
+    private lateinit var tvDateHeader: TextView
+
+    // Session Tracker
+    companion object {
+        var isSessionUnlocked = false
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,13 +92,17 @@ class MainActivity : AppCompatActivity() {
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         monthlyBudget = sharedPref.getFloat("monthly_budget", 0f).toDouble()
 
+        tvDateHeader = findViewById(R.id.tvDateHeader)
+
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
         val btnUnlockScreen = findViewById<Button>(R.id.btnUnlockScreen)
 
         val isAppLockEnabled = sharedPref.getBoolean("app_lock_enabled", false)
-        if (isAppLockEnabled) {
+        if (isAppLockEnabled && !isSessionUnlocked) {
             lockedOverlay.visibility = View.VISIBLE
             launchBiometricLock(lockedOverlay)
+        } else {
+            lockedOverlay.visibility = View.GONE
         }
 
         btnUnlockScreen.setOnClickListener { launchBiometricLock(lockedOverlay) }
@@ -168,7 +196,7 @@ class MainActivity : AppCompatActivity() {
 
         val btnToggleTheme = findViewById<Button>(R.id.btnToggleTheme)
         updateThemeButtonText(btnToggleTheme)
-        setupThemeButtonPhysics(btnToggleTheme) // NEW: Circular Reveal Engine
+        setupThemeButtonPhysics(btnToggleTheme)
 
         val btnToggleAppLock = findViewById<Button>(R.id.btnToggleAppLock)
         updateAppLockButtonText(btnToggleAppLock)
@@ -182,7 +210,6 @@ class MainActivity : AppCompatActivity() {
         checkAndRequestPermissions()
     }
 
-    // --- ULTRA PREMIUM FEATURE 6: The Telegram-Style Circular Reveal ---
     private fun setupThemeButtonPhysics(button: Button) {
         button.setOnClickListener {
             if (!button.isEnabled) return@setOnClickListener
@@ -194,44 +221,33 @@ class MainActivity : AppCompatActivity() {
             val isDark = newMode == AppCompatDelegate.MODE_NIGHT_YES
             val nextText = if (isDark) "☀️ Light Mode" else "🌙 Dark Mode"
 
-            // 1. Calculate exactly where your finger tapped the button
             val location = IntArray(2)
             button.getLocationInWindow(location)
             val cx = location[0] + button.width / 2
             val cy = location[1] + button.height / 2
 
-            // 2. Generate a giant color layer over the app
             val rootView = window.decorView.rootView as ViewGroup
             val rippleView = View(this)
             rippleView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 
-            // Ripple color depends on the mode we are switching to
             val colorRes = if (isDark) Color.parseColor("#121212") else Color.parseColor("#FFFFFF")
             rippleView.setBackgroundColor(colorRes)
 
-            // Add the layer to the very top of the screen
             rootView.addView(rippleView)
-
-            // 3. Calculate the distance to the furthest corner of the screen
             val finalRadius = Math.hypot(rootView.width.toDouble(), rootView.height.toDouble()).toFloat()
 
-            // 4. Ignite the Circular Reveal expanding from the button!
             val anim = ViewAnimationUtils.createCircularReveal(rippleView, cx, cy, 0f, finalRadius)
-            anim.duration = 350 // Smooth ripple speed
+            anim.duration = 600
             anim.interpolator = DecelerateInterpolator()
 
             anim.addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
-                    // 5. Once the screen is swallowed by the ripple, instantly swap the real app colors underneath
                     getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putInt("theme_mode", newMode).apply()
                     AppCompatDelegate.setDefaultNightMode(newMode)
-
-                    // 6. Disable the default Android activity restart flash, making it perfectly seamless!
                     overridePendingTransition(0, 0)
                 }
             })
 
-            // Still do the cool 3D coin flip on the button itself while the ripple expands
             button.animate()
                 .scaleX(0.8f).scaleY(0.8f)
                 .rotationX(90f)
@@ -242,16 +258,13 @@ class MainActivity : AppCompatActivity() {
                     button.animate()
                         .scaleX(1f).scaleY(1f)
                         .rotationX(0f)
-                        .setDuration(150)
+                        .setDuration(250)
                         .setInterpolator(OvershootInterpolator(2f))
                         .start()
                 }.start()
-
-            // Boom! Start the ripple.
             anim.start()
         }
     }
-    // -------------------------------------------------------------------
 
     private fun animateNumberRoll(textView: TextView, oldValue: Double, newValue: Double) {
         val animator = ValueAnimator.ofFloat(oldValue.toFloat(), newValue.toFloat())
@@ -321,6 +334,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
+                    isSessionUnlocked = true
                     overlay.animate().alpha(0f).setDuration(400).withEndAction { overlay.visibility = View.GONE }.start()
                 }
             })
@@ -344,6 +358,7 @@ class MainActivity : AppCompatActivity() {
                     val newState = !isCurrentlyEnabled
                     sharedPref.edit().putBoolean("app_lock_enabled", newState).apply()
                     updateAppLockButtonText(button)
+                    if (!newState) isSessionUnlocked = true
                     Toast.makeText(applicationContext, "App Lock ${if (newState) "enabled" else "disabled"}!", Toast.LENGTH_SHORT).show()
                 }
             })
@@ -402,12 +417,13 @@ class MainActivity : AppCompatActivity() {
             val category = spinnerCategory.selectedItem.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
 
-            if (amountText.isEmpty() || description.isEmpty() || amountText.toDoubleOrNull()?.let { it <= 0 } == true) {
+            val amount = amountText.toDoubleOrNull()
+            if (amount == null || amount <= 0 || description.isEmpty()) {
                 Toast.makeText(this, "Please enter valid details", Toast.LENGTH_SHORT).show()
                 return@applySquishPhysics
             }
 
-            expenseViewModel.insert(Expense(amount = amountText.toDouble(), category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
+            expenseViewModel.insert(Expense(amount = amount, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
             dialog.dismiss()
             if (type == "Expense") checkBudgetStatus()
         }
@@ -453,9 +469,13 @@ class MainActivity : AppCompatActivity() {
             val description = etDescription.text.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
 
-            if (amountText.isEmpty() || description.isEmpty() || amountText.toDoubleOrNull()?.let { it <= 0 } == true) return@applySquishPhysics
+            val amount = amountText.toDoubleOrNull()
+            if (amount == null || amount <= 0 || description.isEmpty()) {
+                Toast.makeText(this, "Please enter valid details", Toast.LENGTH_SHORT).show()
+                return@applySquishPhysics
+            }
 
-            expenseViewModel.update(expense.copy(amount = amountText.toDouble(), category = spinnerCategory.selectedItem.toString(), description = description, type = type, isRecurring = cbRecurring.isChecked))
+            expenseViewModel.update(expense.copy(amount = amount, category = spinnerCategory.selectedItem.toString(), description = description, type = type, isRecurring = cbRecurring.isChecked))
             dialog.dismiss()
             if (type == "Expense") checkBudgetStatus()
         }
@@ -504,14 +524,58 @@ class MainActivity : AppCompatActivity() {
 
         applySquishPhysics(dialogView.findViewById<Button>(R.id.btnApplyDateFilter)) {
             val calendar = Calendar.getInstance()
+            val dateFormat = SimpleDateFormat("dd MMM", Locale.getDefault())
+
             when (radioGroup.checkedRadioButtonId) {
-                R.id.radioAllTime -> { expenseViewModel.clearDateFilter(); findViewById<Button>(R.id.btnDateFilter).text = "All Time" }
-                R.id.radioToday -> {
-                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
-                    expenseViewModel.setDateRangeFilter(start, Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59) }.timeInMillis)
-                    findViewById<Button>(R.id.btnDateFilter).text = "Today"
+                R.id.radioAllTime -> {
+                    expenseViewModel.clearDateFilter()
+                    findViewById<Button>(R.id.btnDateFilter).text = "All Time"
+                    tvDateHeader.text = "Showing: All Time"
                 }
-                R.id.radioCustom -> { dialog.dismiss(); showCustomDateRangePicker(); return@applySquishPhysics }
+                R.id.radioToday -> {
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                    val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "Today"
+                    tvDateHeader.text = "Showing: Today (${dateFormat.format(Date())})"
+                }
+                R.id.radioThisWeek -> {
+                    calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY) // FORCE MONDAY START
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                    // End should include TODAY's full day
+                    val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "This Week"
+                    tvDateHeader.text = "Showing: This Week (Mon - Today)"
+                }
+                R.id.radioThisMonth -> {
+                    calendar.set(Calendar.DAY_OF_MONTH, 1)
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                    val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "This Month"
+                    tvDateHeader.text = "Showing: This Month"
+                }
+                R.id.radioLastMonth -> {
+                    // Set to first day of current month, then subtract 1 month
+                    calendar.set(Calendar.DAY_OF_MONTH, 1)
+                    calendar.add(Calendar.MONTH, -1)
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+
+                    // Go to end of that month
+                    calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+                    val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "Last Month"
+                    tvDateHeader.text = "Showing: Last Month"
+                }
+                R.id.radioCustom -> {
+                    dialog.dismiss()
+                    showCustomDateRangePicker()
+                    return@applySquishPhysics
+                }
             }
             dialog.dismiss()
         }
@@ -522,10 +586,20 @@ class MainActivity : AppCompatActivity() {
     private fun showCustomDateRangePicker() {
         val calendar = Calendar.getInstance()
         DatePickerDialog(this, { _, y, m, d ->
-            val start = Calendar.getInstance().apply { set(y, m, d, 0, 0, 0) }.timeInMillis
+            val startSelected = Calendar.getInstance().apply { set(y, m, d, 0, 0, 0) }.timeInMillis
+
             DatePickerDialog(this, { _, y2, m2, d2 ->
-                expenseViewModel.setDateRangeFilter(start, Calendar.getInstance().apply { set(y2, m2, d2, 23, 59, 59) }.timeInMillis)
+                val endSelected = Calendar.getInstance().apply { set(y2, m2, d2, 23, 59, 59) }.timeInMillis
+
+                val finalStart = min(startSelected, endSelected)
+                val finalEnd = max(startSelected, endSelected)
+
+                expenseViewModel.setDateRangeFilter(finalStart, finalEnd)
                 findViewById<Button>(R.id.btnDateFilter).text = "Custom"
+
+                val sdf = SimpleDateFormat("dd MMM", Locale.getDefault())
+                tvDateHeader.text = "Showing: ${sdf.format(Date(finalStart))} - ${sdf.format(Date(finalEnd))}"
+
             }, y, m, d).show()
         }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
     }

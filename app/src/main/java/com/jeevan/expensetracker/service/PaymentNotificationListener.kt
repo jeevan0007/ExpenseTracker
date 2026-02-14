@@ -4,36 +4,51 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
-import com.jeevan.expensetracker.utils.PaymentParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.util.Date
+import java.util.regex.Pattern
 
 class PaymentNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName
         val extras = sbn.notification.extras
+        val text = extras.getString("android.text") ?: ""
         val title = extras.getString("android.title") ?: ""
-        val text = extras.getCharSequence("android.text")?.toString() ?: ""
+        val content = "$title $text"
 
-        val parsed = PaymentParser.parseNotification(packageName, title, text)
-        if (parsed != null) {
-            saveExpenseToDb(parsed.amount, "Auto: ${parsed.merchant} (${parsed.source})")
+        // Check for GPay, PhonePe, Paytm
+        if (packageName.contains("google.android.apps.nbu.paisa.user") ||
+            packageName.contains("phonepe") ||
+            packageName.contains("paytm")) {
+
+            if (content.contains("paid", ignoreCase = true) || content.contains("sent", ignoreCase = true)) {
+                parseNotification(content)
+            }
         }
     }
 
-    private fun saveExpenseToDb(amount: Double, description: String) {
-        val dao = ExpenseDatabase.getDatabase(applicationContext).expenseDao()
-        CoroutineScope(Dispatchers.IO).launch {
-            val expense = Expense(
-                amount = amount,
-                category = "Automated", // Sets a default category
-                description = description,
-                date = Date().time
-            )
-            dao.insert(expense)
+    private fun parseNotification(content: String) {
+        val pattern = Pattern.compile("(?i)(?:Rs\\.?|₹)\\s*(\\d+(?:\\.\\d{1,2})?)")
+        val matcher = pattern.matcher(content)
+
+        if (matcher.find()) {
+            val amount = matcher.group(1)?.toDoubleOrNull()
+            if (amount != null) {
+                val database = ExpenseDatabase.getDatabase(applicationContext)
+                CoroutineScope(Dispatchers.IO).launch {
+                    database.expenseDao().insert(
+                        Expense(
+                            amount = amount,
+                            category = "Other",
+                            description = "UPI: $content",
+                            type = "Expense", // FIX: Explicitly set type
+                            isRecurring = false
+                        )
+                    )
+                }
+            }
         }
     }
 }

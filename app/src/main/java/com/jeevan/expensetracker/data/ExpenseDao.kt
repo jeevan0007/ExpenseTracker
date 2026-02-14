@@ -5,32 +5,37 @@ import androidx.room.*
 
 @Dao
 interface ExpenseDao {
-    @Insert
-    suspend fun insert(expense: Expense)
 
-    @Update
-    suspend fun update(expense: Expense)
+    @Query("SELECT * FROM expense_table ORDER BY date DESC")
+    fun getAllExpenses(): LiveData<List<Expense>>
+
+    @Query("SELECT SUM(amount) FROM expense_table WHERE type = 'Income'")
+    fun getTotalIncome(): LiveData<Double>
+
+    @Query("SELECT SUM(amount) FROM expense_table WHERE type = 'Expense'")
+    fun getTotalExpenses(): LiveData<Double>
+
+    // FIX 1: Add missing query for Recurring Worker
+    @Query("SELECT * FROM expense_table WHERE isRecurring = 1")
+    fun getRecurringExpenses(): List<Expense>
+
+    // FIX 2: Add missing query to prevent duplicate auto-expenses
+    @Query("SELECT COUNT(*) FROM expense_table WHERE description = :desc AND category = :category AND date BETWEEN :start AND :end")
+    fun checkExpenseExistsThisMonth(desc: String, category: String, start: Long, end: Long): Int
+
+    // FIX 3: Add missing query for Charts (Category totals)
+    @Query("SELECT category, SUM(amount) as total FROM expense_table WHERE type = 'Expense' GROUP BY category")
+    fun getTotalByCategory(): LiveData<List<CategoryTotal>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(expense: Expense)
 
     @Delete
     suspend fun delete(expense: Expense)
 
-    @Query("SELECT * FROM expenses ORDER BY date DESC")
-    fun getAllExpenses(): LiveData<List<Expense>>
-
-    @Query("SELECT SUM(amount) FROM expenses WHERE type = 'Expense'")
-    fun getTotalExpenses(): LiveData<Double>
-
-    @Query("SELECT SUM(amount) FROM expenses WHERE type = 'Income'")
-    fun getTotalIncome(): LiveData<Double>
-
-    @Query("SELECT SUM(amount) FROM expenses WHERE category = :category AND type = 'Expense'")
-    fun getTotalByCategory(category: String): LiveData<Double>
-
-    // NEW: Get all recurring subscriptions
-    @Query("SELECT * FROM expenses WHERE isRecurring = 1")
-    suspend fun getRecurringExpenses(): List<Expense>
-
-    // NEW: Check if this month's subscription was already paid
-    @Query("SELECT COUNT(*) FROM expenses WHERE description = :description AND amount = :amount AND date >= :startOfMonth")
-    suspend fun checkExpenseExistsThisMonth(description: String, amount: Double, startOfMonth: Long): Int
+    @Update
+    suspend fun update(expense: Expense)
 }
+
+// Helper class for Chart Data
+data class CategoryTotal(val category: String, val total: Double)

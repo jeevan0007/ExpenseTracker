@@ -2,16 +2,15 @@ package com.jeevan.expensetracker.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import java.util.Date
 
-@Entity(tableName = "expenses")
+// FIX: Explicitly set the table name to "expense_table" to match the DAO queries
+@Entity(tableName = "expense_table")
 data class Expense(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val amount: Double,
     val category: String,
     val description: String,
-    val date: Long = Date().time,
-    val type: String = "Expense",
-    val isRecurring: Boolean = false // NEW: Tracks subscriptions
+    val date: Long = System.currentTimeMillis(),
+    val type: String, // "Income" or "Expense"
+    val isRecurring: Boolean = false
 )

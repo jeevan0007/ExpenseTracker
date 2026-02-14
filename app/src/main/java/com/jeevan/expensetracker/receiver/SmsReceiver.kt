@@ -3,44 +3,54 @@ package com.jeevan.expensetracker.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.telephony.SmsMessage
+import android.provider.Telephony
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
-import com.jeevan.expensetracker.utils.PaymentParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.util.Date
+import java.util.regex.Pattern
 
 class SmsReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == "android.provider.Telephony.SMS_RECEIVED") {
-            val bundle = intent.extras
-            if (bundle != null) {
-                val pdus = bundle.get("pdus") as Array<*>
-                for (pdu in pdus) {
-                    val smsMessage = SmsMessage.createFromPdu(pdu as ByteArray)
-                    val messageBody = smsMessage.messageBody
 
-                    val parsed = PaymentParser.parseSms(messageBody)
-                    if (parsed != null) {
-                        saveExpenseToDb(context, parsed.amount, "Auto: ${parsed.merchant} (${parsed.source})")
-                    }
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+            val msgs = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+            for (sms in msgs) {
+                val messageBody = sms.messageBody
+                val sender = sms.originatingAddress ?: ""
+
+                // Simple check: Is this a bank SMS?
+                if (sender.contains("BANK", ignoreCase = true) || messageBody.contains("debited", ignoreCase = true)) {
+                    parseSms(context, messageBody)
                 }
             }
         }
     }
 
-    private fun saveExpenseToDb(context: Context, amount: Double, description: String) {
-        val dao = ExpenseDatabase.getDatabase(context).expenseDao()
-        CoroutineScope(Dispatchers.IO).launch {
-            val expense = Expense(
-                amount = amount,
-                category = "Automated", // Sets a default category for these
-                description = description,
-                date = Date().time
-            )
-            dao.insert(expense)
+    private fun parseSms(context: Context, message: String) {
+        // Regex to find amounts like "Rs. 500" or "INR 500.00"
+        val pattern = Pattern.compile("(?i)(?:Rs\\.?|INR)\\s*(\\d+(?:\\.\\d{1,2})?)")
+        val matcher = pattern.matcher(message)
+
+        if (matcher.find()) {
+            val amountString = matcher.group(1)
+            val amount = amountString?.toDoubleOrNull()
+
+            if (amount != null) {
+                val database = ExpenseDatabase.getDatabase(context)
+                CoroutineScope(Dispatchers.IO).launch {
+                    database.expenseDao().insert(
+                        Expense(
+                            amount = amount,
+                            category = "Other",
+                            description = "SMS: $message", // Truncate if too long in real app
+                            type = "Expense", // FIX: Explicitly set type
+                            isRecurring = false
+                        )
+                    )
+                }
+            }
         }
     }
 }
