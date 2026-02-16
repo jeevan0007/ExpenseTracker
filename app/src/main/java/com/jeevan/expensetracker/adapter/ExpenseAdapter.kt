@@ -1,10 +1,12 @@
 package com.jeevan.expensetracker.adapter
 
 import android.graphics.Color
+import android.view.GestureDetector
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AnimationUtils
 import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
@@ -19,6 +21,7 @@ class ExpenseAdapter(
 ) : RecyclerView.Adapter<ExpenseAdapter.ExpenseViewHolder>() {
 
     private var expenses = emptyList<Expense>()
+    private var lastPosition = -1
 
     class ExpenseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCategoryIcon: TextView = itemView.findViewById(R.id.tvCategoryIcon)
@@ -37,7 +40,7 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
-        // 1. Emoji & Text
+        // --- 1. DATA BINDING ---
         val emoji = getCategoryEmoji(currentExpense.category)
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
@@ -48,16 +51,14 @@ class ExpenseAdapter(
             holder.tvDescription.text = currentExpense.description
         }
 
-        // 2. Color Coding
         if (currentExpense.type == "Income") {
             holder.tvAmount.text = "+ ₹${String.format("%.2f", currentExpense.amount)}"
-            holder.tvAmount.setTextColor(Color.parseColor("#388E3C")) // Green
+            holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
         } else {
             holder.tvAmount.text = "- ₹${String.format("%.2f", currentExpense.amount)}"
-            holder.tvAmount.setTextColor(Color.parseColor("#D32F2F")) // Red
+            holder.tvAmount.setTextColor(Color.parseColor("#D32F2F"))
         }
 
-        // 3. Date
         try {
             val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
             holder.tvDate.text = dateFormat.format(Date(currentExpense.date))
@@ -65,33 +66,68 @@ class ExpenseAdapter(
             holder.tvDate.text = "Invalid Date"
         }
 
-        // --- NEW: SQUISH PHYSICS (Safe Version) ---
-        // This only shrinks the item when you press it.
-        // It does NOT hide the item on load, so no "Ghost List" bug!
+        // --- 2. SCROLL ANIMATION ---
+        setAnimation(holder.itemView, position)
+
+        // --- 3. PHYSICS + CLICKS + LONG PRESS (The Fix) ---
+        // We use a GestureDetector to distinguish between a TAP and a HOLD
+        val gestureDetector = GestureDetector(holder.itemView.context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                onItemClick(currentExpense)
+                return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                // This brings back the Delete Dialog!
+                onItemLongClick(currentExpense)
+                // Optional: Add haptic feedback for the hold
+                holder.itemView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            }
+        })
+
         holder.itemView.setOnTouchListener { v, event ->
+            // Let the detector decide if it's a Click or Long Press
+            gestureDetector.onTouchEvent(event)
+
+            // Handle the "Squish" animation manually
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    // Shrink slightly when pressed
                     v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(100).start()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    // Bounce back to normal size
                     v.animate().scaleX(1f).scaleY(1f).setDuration(300)
                         .setInterpolator(OvershootInterpolator(2f)).start()
                 }
             }
-            false // Important: Return false so the click listener still works
-        }
-
-        holder.itemView.setOnLongClickListener {
-            onItemLongClick(currentExpense)
-            true
-        }
-
-        holder.itemView.setOnClickListener {
-            onItemClick(currentExpense)
+            true // Consumes the event so the detector keeps working
         }
     }
+
+    private fun setAnimation(viewToAnimate: View, position: Int) {
+        if (position > lastPosition) {
+            val animation = AnimationUtils.loadAnimation(viewToAnimate.context, android.R.anim.slide_in_left)
+            animation.duration = 400
+            viewToAnimate.startAnimation(animation)
+            lastPosition = position
+        }
+    }
+
+    override fun onViewDetachedFromWindow(holder: ExpenseViewHolder) {
+        holder.itemView.clearAnimation()
+    }
+
+    fun setExpenses(expenses: List<Expense>) {
+        this.expenses = expenses
+        this.lastPosition = -1
+        notifyDataSetChanged()
+    }
+
+    // Helper for Swipe-to-Delete
+    fun getExpenseAt(position: Int): Expense {
+        return expenses[position]
+    }
+
+    override fun getItemCount() = expenses.size
 
     private fun getCategoryEmoji(category: String): String {
         return when (category) {
@@ -106,12 +142,5 @@ class ExpenseAdapter(
             "Other" -> "📌"
             else -> "💰"
         }
-    }
-
-    override fun getItemCount() = expenses.size
-
-    fun setExpenses(expenses: List<Expense>) {
-        this.expenses = expenses
-        notifyDataSetChanged()
     }
 }

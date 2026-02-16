@@ -42,6 +42,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -126,6 +127,21 @@ class MainActivity : AppCompatActivity() {
         )
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
+        // --- ADD THIS BLOCK FOR SWIPE TO DELETE ---
+        val swipeHandler = object : SwipeGesture(this) {
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                // 1. Get the item that was swiped
+                val position = viewHolder.adapterPosition
+                val expenseToDelete = adapter.getExpenseAt(position) // We need to add this function to Adapter!
+
+                // 2. Delete it
+                expenseViewModel.delete(expenseToDelete)
+
+                // 3. Optional: Show "Undo" Snackbar here later
+            }
+        }
+        val itemTouchHelper = ItemTouchHelper(swipeHandler)
+        itemTouchHelper.attachToRecyclerView(recyclerView)
 
         // --- SEARCH ---
         val etSearch = findViewById<EditText>(R.id.etSearch)
@@ -288,14 +304,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // REPLACE YOUR OLD FUNCTION WITH THIS NEW PREMIUM VERSION
     private fun animateNumberRoll(textView: TextView, oldValue: Double, newValue: Double) {
+        // 1. Use Decelerate to land smoothly (like a car braking) instead of Overshoot
         val animator = ValueAnimator.ofFloat(oldValue.toFloat(), newValue.toFloat())
-        animator.duration = 1200
-        animator.interpolator = OvershootInterpolator(1f)
+        animator.duration = 1500 // 1.5 seconds (Longer = more satisfying)
+        animator.interpolator = DecelerateInterpolator(1.5f)
+
+        // 2. Create the Indian Rupee Formatter ONCE (Efficient)
+        val format = java.text.NumberFormat.getCurrencyInstance(java.util.Locale("en", "IN"))
+
         animator.addUpdateListener { animation ->
             val animatedValue = animation.animatedValue as Float
-            textView.text = "₹${String.format("%.2f", animatedValue)}"
+            // 3. Set text with Commas (e.g., ₹1,20,500.00)
+            textView.text = format.format(animatedValue)
         }
+
+        // 4. (Optional) Add a tiny vibration when it finishes "locking" the number
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                // Only vibrate if the change was significant (> 1 rupee)
+                if (Math.abs(oldValue - newValue) > 1) {
+                    vibratePhoneLight()
+                }
+            }
+        })
+
         animator.start()
     }
 
@@ -463,12 +497,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDeleteDialog(expense: Expense) {
-        AlertDialog.Builder(this)
-            .setTitle("Delete Entry")
-            .setMessage("Are you sure you want to delete this ${expense.type}?\n\n${expense.description} - ₹${String.format("%.2f", expense.amount)}")
-            .setPositiveButton("Delete") { _, _ -> expenseViewModel.delete(expense) }
-            .setNegativeButton("Cancel", null)
-            .create().apply { window?.attributes?.windowAnimations = R.style.DialogAnimation; show() }
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_confirm_delete, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+
+        // --- PREMIUM POLISH ---
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        // This applies your custom Telegram-style animation
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
+        val tvDeleteMessage = dialogView.findViewById<TextView>(R.id.tvDeleteMessage)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancelDelete)
+        val btnConfirm = dialogView.findViewById<Button>(R.id.btnConfirmDelete)
+
+        // Show the specific item details in the message
+        tvDeleteMessage.text = "Are you sure you want to delete\n\"${expense.description}\"?"
+
+        // Apply your custom Squish Physics
+        applySquishPhysics(btnCancel) {
+            dialog.dismiss()
+        }
+
+        applySquishPhysics(btnConfirm) {
+            vibratePhone() // Stronger vibration for delete
+            expenseViewModel.delete(expense)
+            dialog.dismiss()
+            Toast.makeText(this, "Transaction Deleted", Toast.LENGTH_SHORT).show()
+        }
+
+        dialog.show()
     }
 
     private fun showEditDialog(expense: Expense) {
