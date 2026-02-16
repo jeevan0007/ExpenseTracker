@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
     implementation("com.airbnb.android:lottie:6.1.0")
+    implementation("com.airbnb.android:lottie:6.4.0")
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
     // NEW: WorkManager for background automated tasks
     implementation("androidx.work:work-runtime-ktx:2.9.0")

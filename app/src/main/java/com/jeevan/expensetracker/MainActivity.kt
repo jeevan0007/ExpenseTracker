@@ -42,12 +42,13 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
-import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.airbnb.lottie.LottieAnimationView // <--- ADDED FOR WOLF ANIMATION
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.progressindicator.LinearProgressIndicator
@@ -68,6 +69,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var expenseViewModel: ExpenseViewModel
     private lateinit var adapter: ExpenseAdapter
+    private lateinit var lottieAnimationView: LottieAnimationView // <--- ANIMATION STAGE
     private var monthlyBudget: Double = 0.0
 
     // Animation States
@@ -77,9 +79,9 @@ class MainActivity : AppCompatActivity() {
     private var oldIncomeAnimState: Double = 0.0
     private var oldExpenseAnimState: Double = 0.0
 
-    // --- FIX: SMART BUDGET CHECKER ---
+    // Smart Budget Checker
     private var shouldCheckBudget: Boolean = false
-    private var expenseBeforeAdd: Double = 0.0 // Stores value BEFORE save
+    private var expenseBeforeAdd: Double = 0.0
 
     // UI Header
     private lateinit var tvDateHeader: TextView
@@ -99,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         monthlyBudget = sharedPref.getFloat("monthly_budget", 0f).toDouble()
 
         tvDateHeader = findViewById(R.id.tvDateHeader)
+        lottieAnimationView = findViewById(R.id.lottieAnimationView) // <--- INITIALIZE LOTTIE
 
         // --- BIOMETRIC LOCK ---
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
@@ -127,17 +130,14 @@ class MainActivity : AppCompatActivity() {
         )
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
-        // --- ADD THIS BLOCK FOR SWIPE TO DELETE ---
+
+        // --- SWIPE TO DELETE LOGIC ---
         val swipeHandler = object : SwipeGesture(this) {
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                // 1. Get the item that was swiped
                 val position = viewHolder.adapterPosition
-                val expenseToDelete = adapter.getExpenseAt(position) // We need to add this function to Adapter!
-
-                // 2. Delete it
+                val expenseToDelete = adapter.getExpenseAt(position)
                 expenseViewModel.delete(expenseToDelete)
-
-                // 3. Optional: Show "Undo" Snackbar here later
+                Toast.makeText(this@MainActivity, "Deleted Transaction", Toast.LENGTH_SHORT).show()
             }
         }
         val itemTouchHelper = ItemTouchHelper(swipeHandler)
@@ -187,17 +187,12 @@ class MainActivity : AppCompatActivity() {
             updateBalance(tvBalanceAmount)
         }
 
-        // --- FIXED TOTAL EXPENSE OBSERVER ---
         expenseViewModel.totalExpenses.observe(this) { expense ->
             currentExpense = expense ?: 0.0
             animateNumberRoll(tvExpenseAmount, oldExpenseAnimState, currentExpense)
             oldExpenseAnimState = currentExpense
             updateBalance(tvBalanceAmount)
 
-            // THE FIX:
-            // 1. Check if we are supposed to check budget
-            // 2. AND Check if the amount actually changed (is greater than what it was before add)
-            // This prevents the "Old Data" popup.
             if (shouldCheckBudget && currentExpense > expenseBeforeAdd) {
                 checkBudgetStatus()
                 shouldCheckBudget = false
@@ -246,90 +241,109 @@ class MainActivity : AppCompatActivity() {
 
         checkAndRequestPermissions()
     }
+    private fun shakeHeaderCard() {
+        val headerCard = findViewById<com.google.android.material.card.MaterialCardView>(R.id.headerCard)
 
-    // --- ANIMATIONS & PHYSICS ---
+        // Create a shake animation using a translation offset
+        val shakeAnimator = ValueAnimator.ofFloat(0f, 15f, -15f, 10f, -10f, 5f, -5f, 0f)
+        shakeAnimator.duration = 500 // Duration of the shake
+        shakeAnimator.addUpdateListener { animation ->
+            val value = animation.animatedValue as Float
+            headerCard.translationX = value
+            headerCard.translationY = value / 2 // Slight vertical jitter for realism
+        }
+        shakeAnimator.start()
+    }
+
+    // --- SPIRIT ANIMAL THEME TOGGLE (THE WOLF) ---
     private fun setupThemeButtonPhysics(button: Button) {
         button.setOnClickListener {
             if (!button.isEnabled) return@setOnClickListener
             button.isEnabled = false
             vibratePhone()
 
-            val currentMode = AppCompatDelegate.getDefaultNightMode()
-            val newMode = if (currentMode == AppCompatDelegate.MODE_NIGHT_YES) AppCompatDelegate.MODE_NIGHT_NO else AppCompatDelegate.MODE_NIGHT_YES
-            val isDark = newMode == AppCompatDelegate.MODE_NIGHT_YES
-            val nextText = if (isDark) "☀️ Light Mode" else "🌙 Dark Mode"
+            val isDark = AppCompatDelegate.getDefaultNightMode() != AppCompatDelegate.MODE_NIGHT_YES
 
-            val location = IntArray(2)
-            button.getLocationInWindow(location)
-            val cx = location[0] + button.width / 2
-            val cy = location[1] + button.height / 2
+            // 1. Play the Spirit Animal FIRST
+            triggerSpiritAnimation(isDark) {
+                // 2. This block runs at the PERFECT MOMENT (e.g., during the howl)
+                val newMode = if (isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+                getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putInt("theme_mode", newMode).apply()
+                AppCompatDelegate.setDefaultNightMode(newMode)
 
-            val rootView = window.decorView.rootView as ViewGroup
-            val rippleView = View(this)
-            rippleView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-
-            val colorRes = if (isDark) Color.parseColor("#121212") else Color.parseColor("#FFFFFF")
-            rippleView.setBackgroundColor(colorRes)
-
-            rootView.addView(rippleView)
-            val finalRadius = Math.hypot(rootView.width.toDouble(), rootView.height.toDouble()).toFloat()
-
-            val anim = ViewAnimationUtils.createCircularReveal(rippleView, cx, cy, 0f, finalRadius)
-            anim.duration = 600
-            anim.interpolator = DecelerateInterpolator()
-
-            anim.addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putInt("theme_mode", newMode).apply()
-                    AppCompatDelegate.setDefaultNightMode(newMode)
-                    overridePendingTransition(0, 0)
-                }
-            })
-
-            button.animate()
-                .scaleX(0.8f).scaleY(0.8f)
-                .rotationX(90f)
-                .setDuration(150)
-                .withEndAction {
-                    button.text = nextText
-                    button.rotationX = -90f
-                    button.animate()
-                        .scaleX(1f).scaleY(1f)
-                        .rotationX(0f)
-                        .setDuration(250)
-                        .setInterpolator(OvershootInterpolator(2f))
-                        .start()
-                }.start()
-            anim.start()
+                // Refresh button text
+                button.text = if (isDark) "☀️ Light Mode" else "🌙 Dark Mode"
+                button.isEnabled = true
+            }
         }
     }
 
-    // REPLACE YOUR OLD FUNCTION WITH THIS NEW PREMIUM VERSION
+    private fun triggerSpiritAnimation(isDark: Boolean, onThemeSwitch: () -> Unit) {
+        val animationFile = if (isDark) R.raw.wolf_howl else R.raw.sun_inspire
+        lottieAnimationView.setAnimation(animationFile)
+
+        lottieAnimationView.visibility = View.VISIBLE
+        lottieAnimationView.bringToFront()
+
+        // reset state
+        lottieAnimationView.progress = 0f
+        lottieAnimationView.alpha = 1f
+        lottieAnimationView.scaleX = 1.1f
+        lottieAnimationView.scaleY = 1.1f
+
+        lottieAnimationView.playAnimation()
+
+        // --- ENHANCED TIMING ---
+        // The wolf reaches full howl around 70% of the way through (frame 80ish)
+        lottieAnimationView.postDelayed({
+            // 1. Trigger the impact
+            onThemeSwitch()
+
+            if (isDark) {
+                vibratePhone()
+                shakeHeaderCard()
+
+                // 2. PAUSE the animation at the peak of the howl for 800ms
+                // This makes the "Howl" feel powerful and intentional
+                lottieAnimationView.pauseAnimation()
+
+                lottieAnimationView.postDelayed({
+                    // 3. Resume and fade out
+                    lottieAnimationView.resumeAnimation()
+                    lottieAnimationView.animate()
+                        .alpha(0f)
+                        .setDuration(500)
+                        .withEndAction { lottieAnimationView.visibility = View.GONE }
+                        .start()
+                }, 800)
+            } else {
+                // Sun logic remains smooth
+                lottieAnimationView.postDelayed({
+                    lottieAnimationView.animate().alpha(0f).setDuration(400).start()
+                }, 1000)
+            }
+        }, 1100) // Timing matched to the "Wolf_Howl.json" peak
+    }
+
     private fun animateNumberRoll(textView: TextView, oldValue: Double, newValue: Double) {
-        // 1. Use Decelerate to land smoothly (like a car braking) instead of Overshoot
         val animator = ValueAnimator.ofFloat(oldValue.toFloat(), newValue.toFloat())
-        animator.duration = 1500 // 1.5 seconds (Longer = more satisfying)
+        animator.duration = 1500
         animator.interpolator = DecelerateInterpolator(1.5f)
 
-        // 2. Create the Indian Rupee Formatter ONCE (Efficient)
         val format = java.text.NumberFormat.getCurrencyInstance(java.util.Locale("en", "IN"))
 
         animator.addUpdateListener { animation ->
             val animatedValue = animation.animatedValue as Float
-            // 3. Set text with Commas (e.g., ₹1,20,500.00)
             textView.text = format.format(animatedValue)
         }
 
-        // 4. (Optional) Add a tiny vibration when it finishes "locking" the number
         animator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                // Only vibrate if the change was significant (> 1 rupee)
                 if (Math.abs(oldValue - newValue) > 1) {
                     vibratePhoneLight()
                 }
             }
         })
-
         animator.start()
     }
 
@@ -380,7 +394,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- BIOMETRICS ---
     private fun launchBiometricLock(overlay: View) {
         val executor = ContextCompat.getMainExecutor(this)
         val biometricPrompt = BiometricPrompt(this, executor,
@@ -449,7 +462,6 @@ class MainActivity : AppCompatActivity() {
         return flat != null && flat.contains(pkgName)
     }
 
-    // --- DIALOGS ---
     private fun showAddExpenseDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
@@ -481,13 +493,11 @@ class MainActivity : AppCompatActivity() {
                 return@applySquishPhysics
             }
 
-            // FIX: Capture value BEFORE insert
             expenseBeforeAdd = currentExpense
 
             expenseViewModel.insert(Expense(amount = amount, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
             dialog.dismiss()
 
-            // FIX: Enable flag
             if (type == "Expense") {
                 shouldCheckBudget = true
             }
@@ -500,25 +510,21 @@ class MainActivity : AppCompatActivity() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_confirm_delete, null)
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
 
-        // --- PREMIUM POLISH ---
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        // This applies your custom Telegram-style animation
         dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
         val tvDeleteMessage = dialogView.findViewById<TextView>(R.id.tvDeleteMessage)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancelDelete)
         val btnConfirm = dialogView.findViewById<Button>(R.id.btnConfirmDelete)
 
-        // Show the specific item details in the message
         tvDeleteMessage.text = "Are you sure you want to delete\n\"${expense.description}\"?"
 
-        // Apply your custom Squish Physics
         applySquishPhysics(btnCancel) {
             dialog.dismiss()
         }
 
         applySquishPhysics(btnConfirm) {
-            vibratePhone() // Stronger vibration for delete
+            vibratePhone()
             expenseViewModel.delete(expense)
             dialog.dismiss()
             Toast.makeText(this, "Transaction Deleted", Toast.LENGTH_SHORT).show()
@@ -562,7 +568,6 @@ class MainActivity : AppCompatActivity() {
                 return@applySquishPhysics
             }
 
-            // FIX: Capture value BEFORE update
             expenseBeforeAdd = currentExpense
 
             expenseViewModel.update(expense.copy(amount = amount, category = spinnerCategory.selectedItem.toString(), description = description, type = type, isRecurring = cbRecurring.isChecked))
@@ -596,15 +601,12 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // --- BUDGET CHECK LOGIC ---
     private fun checkBudgetStatus() {
         if (monthlyBudget <= 0) return
 
         val percentage = (currentExpense / monthlyBudget) * 100
 
-        // Only show if we crossed 80% threshold
         if (percentage >= 80) {
-
             val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_budget_alert, null)
             val dialog = AlertDialog.Builder(this).setView(dialogView).create()
 
@@ -620,14 +622,12 @@ class MainActivity : AppCompatActivity() {
             val btnIgnore = dialogView.findViewById<Button>(R.id.btnIgnore)
             val btnFixBudget = dialogView.findViewById<Button>(R.id.btnFixBudget)
 
-            // Logic: Critical if we are actually AT or OVER 100%
             val isCritical = percentage >= 100
             val color = if (isCritical) Color.parseColor("#D32F2F") else Color.parseColor("#FF9800")
 
             tvAlertIcon.text = if (isCritical) "🚨" else "⚠️"
             tvAlertTitle.text = if (isCritical) "Budget Exceeded!" else "Budget Warning"
 
-            // FIX: Use %.1f to show "99.7%" instead of rounding up to "100%"
             tvAlertMessage.text = "You have used ${String.format("%.1f", percentage)}% of your monthly limit."
 
             progressBar.progress = percentage.toInt().coerceAtMost(100)
