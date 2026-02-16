@@ -33,9 +33,19 @@ class ChartsActivity : AppCompatActivity() {
     private var chartItemList: List<ChartItem> = ArrayList()
     private var totalSpentAmount: Double = 0.0
 
+    // --- CURRENCY LOGIC (Global variables) ---
+    private var activeRate: Double = 1.0
+    private lateinit var activeFormat: NumberFormat
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_charts)
+
+        // 1. Initialize Currency from Intent
+        activeRate = intent.getDoubleExtra("CURRENCY_RATE", 1.0)
+        val localeParts = intent.getStringExtra("CURRENCY_LOCALE")?.split("_") ?: listOf("en", "IN")
+        val activeLocale = if (localeParts.size > 1) Locale(localeParts[0], localeParts[1]) else Locale("en", "IN")
+        activeFormat = NumberFormat.getCurrencyInstance(activeLocale)
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "Analysis"
@@ -71,18 +81,16 @@ class ChartsActivity : AppCompatActivity() {
         val chartItems = ArrayList<ChartItem>()
         val palette = getChartColors()
 
-        val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
-
         sortedCategories.forEachIndexed { index, entry ->
             val percentage = (entry.value / totalSpentAmount * 100).toFloat()
             val color = palette[index % palette.size]
             val emoji = getCategoryEmoji(entry.key)
 
-            // We add the label to the entry so we can retrieve it on tap,
-            // but we will hide it from being drawn below.
-            entries.add(PieEntry(entry.value.toFloat(), entry.key))
+            // Multiplied value for Entry (Pie Slice)
+            entries.add(PieEntry((entry.value * activeRate).toFloat(), entry.key))
 
-            chartItems.add(ChartItem(entry.key, entry.value, percentage, color, emoji))
+            // Multiplied value for List Item
+            chartItems.add(ChartItem(entry.key, entry.value * activeRate, percentage, color, emoji))
         }
 
         this.chartItemList = chartItems
@@ -90,8 +98,8 @@ class ChartsActivity : AppCompatActivity() {
         val dataSet = PieDataSet(entries, "")
         dataSet.colors = palette
         dataSet.sliceSpace = 3f
-        dataSet.selectionShift = 12f // Increase pop-out effect
-        dataSet.setDrawValues(false) // Hide Numbers on chart
+        dataSet.selectionShift = 12f
+        dataSet.setDrawValues(false)
 
         val data = PieData(dataSet)
         pieChart.data = data
@@ -99,14 +107,13 @@ class ChartsActivity : AppCompatActivity() {
         pieChart.legend.isEnabled = false
         pieChart.setExtraOffsets(20f, 0f, 20f, 0f)
 
-        // --- THE FIX: HIDE LABELS ON CHART ---
         pieChart.setDrawEntryLabels(false)
-
         pieChart.isDrawHoleEnabled = true
         pieChart.setHoleColor(Color.TRANSPARENT)
         pieChart.holeRadius = 70f
         pieChart.transparentCircleRadius = 75f
 
+        // Use activeRate for center text
         updateCenterText("Total", totalSpentAmount)
 
         pieChart.animateY(1400, Easing.EaseInOutQuad)
@@ -114,16 +121,15 @@ class ChartsActivity : AppCompatActivity() {
         pieChart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
             override fun onValueSelected(e: Entry?, h: Highlight?) {
                 if (h == null) return
-
-                // When tapped, get the name from the entry we stored earlier
-                // PieEntry stores the label we passed in the constructor
                 val pieEntry = e as? PieEntry
                 val label = pieEntry?.label ?: "Unknown"
+
+                // The value here is already multiplied in the entries.add step above
                 val amount = pieEntry?.value?.toDouble() ?: 0.0
 
-                updateCenterText(label, amount)
+                // Pass the already-converted amount to center text
+                updateCenterTextSelected(label, amount)
 
-                // Scroll list to match
                 val index = h.x.toInt()
                 if (index in chartItemList.indices) {
                     rvDetails.smoothScrollToPosition(index)
@@ -138,12 +144,19 @@ class ChartsActivity : AppCompatActivity() {
         pieChart.invalidate()
 
         rvDetails.adapter = ChartDetailAdapter(chartItems)
-        tvTotalAmount.text = "Total Spending: ${format.format(totalSpentAmount)}"
+        tvTotalAmount.text = "Total Spending: ${activeFormat.format(totalSpentAmount * activeRate)}"
     }
 
     private fun updateCenterText(label: String, amount: Double) {
-        val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
-        pieChart.centerText = "$label\n${format.format(amount)}"
+        // Multiplies the raw amount by activeRate for display
+        pieChart.centerText = "$label\n${activeFormat.format(amount * activeRate)}"
+        pieChart.setCenterTextSize(22f)
+        pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
+    }
+
+    private fun updateCenterTextSelected(label: String, convertedAmount: Double) {
+        // This helper is for when the amount is already multiplied (from the PieEntry)
+        pieChart.centerText = "$label\n${activeFormat.format(convertedAmount)}"
         pieChart.setCenterTextSize(22f)
         pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
     }

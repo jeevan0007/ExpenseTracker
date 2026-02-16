@@ -12,6 +12,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.R
 import com.jeevan.expensetracker.data.Expense
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -22,6 +23,10 @@ class ExpenseAdapter(
 
     private var expenses = emptyList<Expense>()
     private var lastPosition = -1
+
+    // --- CURRENCY STATE (Added for Travel Mode) ---
+    private var exchangeRate = 1.0 // Default: 1.0 (No conversion)
+    private var targetLocale = Locale("en", "IN") // Default: India (₹)
 
     class ExpenseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCategoryIcon: TextView = itemView.findViewById(R.id.tvCategoryIcon)
@@ -40,7 +45,7 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
-        // --- 1. DATA BINDING ---
+        // --- 1. DATA BINDING (Your Original Logic) ---
         val emoji = getCategoryEmoji(currentExpense.category)
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
@@ -51,11 +56,20 @@ class ExpenseAdapter(
             holder.tvDescription.text = currentExpense.description
         }
 
+        // --- NEW CURRENCY MATH ---
+        // Calculate Converted Amount
+        val convertedAmount = currentExpense.amount * exchangeRate
+
+        // Format (Automatically adds $, €, ¥, ₹ based on Locale)
+        val currencyFormat = NumberFormat.getCurrencyInstance(targetLocale)
+        val formattedAmount = currencyFormat.format(convertedAmount)
+
         if (currentExpense.type == "Income") {
-            holder.tvAmount.text = "+ ₹${String.format("%.2f", currentExpense.amount)}"
+            // Added space for readability "+ $100.00"
+            holder.tvAmount.text = "+ $formattedAmount"
             holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
         } else {
-            holder.tvAmount.text = "- ₹${String.format("%.2f", currentExpense.amount)}"
+            holder.tvAmount.text = "- $formattedAmount"
             holder.tvAmount.setTextColor(Color.parseColor("#D32F2F"))
         }
 
@@ -66,11 +80,10 @@ class ExpenseAdapter(
             holder.tvDate.text = "Invalid Date"
         }
 
-        // --- 2. SCROLL ANIMATION ---
+        // --- 2. SCROLL ANIMATION (Your Original Logic) ---
         setAnimation(holder.itemView, position)
 
-        // --- 3. PHYSICS + CLICKS + LONG PRESS (The Fix) ---
-        // We use a GestureDetector to distinguish between a TAP and a HOLD
+        // --- 3. PHYSICS + CLICKS + LONG PRESS (Your Original Logic) ---
         val gestureDetector = GestureDetector(holder.itemView.context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 onItemClick(currentExpense)
@@ -78,18 +91,13 @@ class ExpenseAdapter(
             }
 
             override fun onLongPress(e: MotionEvent) {
-                // This brings back the Delete Dialog!
                 onItemLongClick(currentExpense)
-                // Optional: Add haptic feedback for the hold
                 holder.itemView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
             }
         })
 
         holder.itemView.setOnTouchListener { v, event ->
-            // Let the detector decide if it's a Click or Long Press
             gestureDetector.onTouchEvent(event)
-
-            // Handle the "Squish" animation manually
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(100).start()
@@ -99,7 +107,7 @@ class ExpenseAdapter(
                         .setInterpolator(OvershootInterpolator(2f)).start()
                 }
             }
-            true // Consumes the event so the detector keeps working
+            true
         }
     }
 
@@ -122,12 +130,18 @@ class ExpenseAdapter(
         notifyDataSetChanged()
     }
 
-    // Helper for Swipe-to-Delete
     fun getExpenseAt(position: Int): Expense {
         return expenses[position]
     }
 
     override fun getItemCount() = expenses.size
+
+    // --- NEW HELPER: Called by MainActivity to switch currency ---
+    fun updateCurrency(rate: Double, locale: Locale) {
+        this.exchangeRate = rate
+        this.targetLocale = locale
+        notifyDataSetChanged() // Refreshes the list instantly
+    }
 
     private fun getCategoryEmoji(category: String): String {
         return when (category) {
