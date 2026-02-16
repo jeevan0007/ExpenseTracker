@@ -4,130 +4,156 @@ import android.graphics.Color
 import android.os.Bundle
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModelProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.github.mikephil.charting.animation.Easing
 import com.github.mikephil.charting.charts.PieChart
-import com.github.mikephil.charting.components.Legend
+import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
-import com.github.mikephil.charting.formatter.ValueFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
+import com.jeevan.expensetracker.adapter.ChartDetailAdapter
+import com.jeevan.expensetracker.adapter.ChartItem
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
+import java.text.NumberFormat
+import java.util.Locale
 
 class ChartsActivity : AppCompatActivity() {
 
     private lateinit var expenseViewModel: ExpenseViewModel
     private lateinit var pieChart: PieChart
-    private lateinit var tvTotalSpent: TextView
+    private lateinit var rvDetails: RecyclerView
+    private lateinit var tvTotalAmount: TextView
+
+    private var chartItemList: List<ChartItem> = ArrayList()
+    private var totalSpentAmount: Double = 0.0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_charts)
 
-        // Enable back button
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.title = "Spending Analysis"
+        supportActionBar?.title = "Analysis"
 
         pieChart = findViewById(R.id.pieChart)
-        // If you have a total text view in layout, find it here, otherwise remove this line
-        // tvTotalSpent = findViewById(R.id.tvTotalSpent)
+        rvDetails = findViewById(R.id.rvChartDetails)
+        tvTotalAmount = findViewById(R.id.tvTotalAmount)
+
+        rvDetails.layoutManager = LinearLayoutManager(this)
 
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
-
-        // Observe Live Data
         expenseViewModel.allExpenses.observe(this) { expenses ->
-            setupPieChart(expenses)
+            val expenseOnly = expenses.filter { it.type == "Expense" }
+            if (expenseOnly.isNotEmpty()) {
+                setupChartAndList(expenseOnly)
+            }
         }
     }
 
-    private fun setupPieChart(expenses: List<Expense>) {
-        if (expenses.isEmpty()) return
-
-        // 1. Group expenses by category
+    private fun setupChartAndList(expenses: List<Expense>) {
         val categoryMap = HashMap<String, Double>()
-        var totalAmount = 0.0
+        totalSpentAmount = 0.0
 
         for (expense in expenses) {
-            // Only chart "Expense" type, ignore "Income"
-            if (expense.type == "Expense") {
-                val current = categoryMap.getOrDefault(expense.category, 0.0)
-                categoryMap[expense.category] = current + expense.amount
-                totalAmount += expense.amount
-            }
+            val current = categoryMap.getOrDefault(expense.category, 0.0)
+            categoryMap[expense.category] = current + expense.amount
+            totalSpentAmount += expense.amount
         }
 
-        // 2. Prepare Chart Entries
+        val sortedCategories = categoryMap.entries.sortedByDescending { it.value }
+
         val entries = ArrayList<PieEntry>()
-        val colors = ArrayList<Int>()
+        val chartItems = ArrayList<ChartItem>()
         val palette = getChartColors()
 
-        var i = 0
-        for ((category, amount) in categoryMap) {
-            val emoji = getCategoryEmoji(category)
-            // Label is "🍔 Food"
-            entries.add(PieEntry(amount.toFloat(), "$emoji $category"))
-            colors.add(palette[i % palette.size])
-            i++
+        val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+
+        sortedCategories.forEachIndexed { index, entry ->
+            val percentage = (entry.value / totalSpentAmount * 100).toFloat()
+            val color = palette[index % palette.size]
+            val emoji = getCategoryEmoji(entry.key)
+
+            // We add the label to the entry so we can retrieve it on tap,
+            // but we will hide it from being drawn below.
+            entries.add(PieEntry(entry.value.toFloat(), entry.key))
+
+            chartItems.add(ChartItem(entry.key, entry.value, percentage, color, emoji))
         }
 
-        // 3. Dataset Configuration
-        val dataSet = PieDataSet(entries, "Expenses")
-        dataSet.colors = colors
+        this.chartItemList = chartItems
+
+        val dataSet = PieDataSet(entries, "")
+        dataSet.colors = palette
         dataSet.sliceSpace = 3f
-        dataSet.selectionShift = 5f
+        dataSet.selectionShift = 12f // Increase pop-out effect
+        dataSet.setDrawValues(false) // Hide Numbers on chart
 
-        // Value Lines (The lines pointing to the labels)
-        dataSet.valueLinePart1OffsetPercentage = 80f
-        dataSet.valueLinePart1Length = 0.4f
-        dataSet.valueLinePart2Length = 0.4f
-        dataSet.yValuePosition = PieDataSet.ValuePosition.OUTSIDE_SLICE
-        dataSet.valueLineColor = Color.BLACK
-
-        // 4. Create Data Object
         val data = PieData(dataSet)
-        data.setValueTextSize(14f)
-        data.setValueTextColor(Color.BLACK)
+        pieChart.data = data
+        pieChart.description.isEnabled = false
+        pieChart.legend.isEnabled = false
+        pieChart.setExtraOffsets(20f, 0f, 20f, 0f)
 
-        // Custom Formatter to show "₹500" instead of just "500.0"
-        data.setValueFormatter(object : ValueFormatter() {
-            override fun getFormattedValue(value: Float): String {
-                return "₹${String.format("%.0f", value)}"
+        // --- THE FIX: HIDE LABELS ON CHART ---
+        pieChart.setDrawEntryLabels(false)
+
+        pieChart.isDrawHoleEnabled = true
+        pieChart.setHoleColor(Color.TRANSPARENT)
+        pieChart.holeRadius = 70f
+        pieChart.transparentCircleRadius = 75f
+
+        updateCenterText("Total", totalSpentAmount)
+
+        pieChart.animateY(1400, Easing.EaseInOutQuad)
+
+        pieChart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+            override fun onValueSelected(e: Entry?, h: Highlight?) {
+                if (h == null) return
+
+                // When tapped, get the name from the entry we stored earlier
+                // PieEntry stores the label we passed in the constructor
+                val pieEntry = e as? PieEntry
+                val label = pieEntry?.label ?: "Unknown"
+                val amount = pieEntry?.value?.toDouble() ?: 0.0
+
+                updateCenterText(label, amount)
+
+                // Scroll list to match
+                val index = h.x.toInt()
+                if (index in chartItemList.indices) {
+                    rvDetails.smoothScrollToPosition(index)
+                }
+            }
+
+            override fun onNothingSelected() {
+                updateCenterText("Total", totalSpentAmount)
             }
         })
 
-        // 5. Apply to Chart
-        pieChart.data = data
-        pieChart.description.isEnabled = false
-        pieChart.centerText = "Total\n₹${String.format("%.0f", totalAmount)}"
-        pieChart.setCenterTextSize(18f)
-        pieChart.setCenterTextColor(Color.BLACK)
+        pieChart.invalidate()
 
-        // Hallow Center
-        pieChart.isDrawHoleEnabled = true
-        pieChart.setHoleColor(Color.TRANSPARENT)
-        pieChart.holeRadius = 55f
-        pieChart.transparentCircleRadius = 60f
+        rvDetails.adapter = ChartDetailAdapter(chartItems)
+        tvTotalAmount.text = "Total Spending: ${format.format(totalSpentAmount)}"
+    }
 
-        // Legend Settings
-        val legend = pieChart.legend
-        legend.verticalAlignment = Legend.LegendVerticalAlignment.BOTTOM
-        legend.horizontalAlignment = Legend.LegendHorizontalAlignment.CENTER
-        legend.orientation = Legend.LegendOrientation.HORIZONTAL
-        legend.setDrawInside(false)
-        legend.textSize = 12f
-        legend.isWordWrapEnabled = true
-
-        pieChart.animateY(1000)
-        pieChart.invalidate() // Refresh
+    private fun updateCenterText(label: String, amount: Double) {
+        val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+        pieChart.centerText = "$label\n${format.format(amount)}"
+        pieChart.setCenterTextSize(22f)
+        pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
     }
 
     private fun getChartColors(): List<Int> {
         return listOf(
-            Color.parseColor("#FF6B6B"), // Red
-            Color.parseColor("#4ECDC4"), // Teal
-            Color.parseColor("#FFE66D"), // Yellow
-            Color.parseColor("#1A535C"), // Dark Blue
-            Color.parseColor("#FF9F1C")  // Orange
+            Color.parseColor("#FF6B6B"), Color.parseColor("#4ECDC4"),
+            Color.parseColor("#FFE66D"), Color.parseColor("#1A535C"),
+            Color.parseColor("#FF9F1C"), Color.parseColor("#C7F464"),
+            Color.parseColor("#55D6BE"), Color.parseColor("#ACFCD9")
         )
     }
 
@@ -144,6 +170,10 @@ class ChartsActivity : AppCompatActivity() {
             "Other" -> "📌"
             else -> "💰"
         }
+    }
+
+    private fun isDarkMode(): Boolean {
+        return AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES
     }
 
     override fun onSupportNavigateUp(): Boolean {
