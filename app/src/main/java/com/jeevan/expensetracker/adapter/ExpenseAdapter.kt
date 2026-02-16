@@ -19,7 +19,6 @@ class ExpenseAdapter(
 ) : RecyclerView.Adapter<ExpenseAdapter.ExpenseViewHolder>() {
 
     private var expenses = emptyList<Expense>()
-    private var lastPosition = -1
 
     class ExpenseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCategoryIcon: TextView = itemView.findViewById(R.id.tvCategoryIcon)
@@ -38,6 +37,7 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
+        // 1. Emoji & Text
         val emoji = getCategoryEmoji(currentExpense.category)
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
@@ -48,29 +48,39 @@ class ExpenseAdapter(
             holder.tvDescription.text = currentExpense.description
         }
 
+        // 2. Color Coding
         if (currentExpense.type == "Income") {
             holder.tvAmount.text = "+ ₹${String.format("%.2f", currentExpense.amount)}"
-            holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
+            holder.tvAmount.setTextColor(Color.parseColor("#388E3C")) // Green
         } else {
             holder.tvAmount.text = "- ₹${String.format("%.2f", currentExpense.amount)}"
-            holder.tvAmount.setTextColor(Color.parseColor("#D32F2F"))
+            holder.tvAmount.setTextColor(Color.parseColor("#D32F2F")) // Red
         }
 
-        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-        holder.tvDate.text = dateFormat.format(Date(currentExpense.date))
+        // 3. Date
+        try {
+            val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+            holder.tvDate.text = dateFormat.format(Date(currentExpense.date))
+        } catch (e: Exception) {
+            holder.tvDate.text = "Invalid Date"
+        }
 
-        // ULTRA PREMIUM FEATURE 1: Squish & Spring Touch Physics
+        // --- NEW: SQUISH PHYSICS (Safe Version) ---
+        // This only shrinks the item when you press it.
+        // It does NOT hide the item on load, so no "Ghost List" bug!
         holder.itemView.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.animate().scaleX(0.94f).scaleY(0.94f).setDuration(150).start()
+                    // Shrink slightly when pressed
+                    v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(100).start()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    // Bounce back to normal size
                     v.animate().scaleX(1f).scaleY(1f).setDuration(300)
                         .setInterpolator(OvershootInterpolator(2f)).start()
                 }
             }
-            false // Pass on to click listeners
+            false // Important: Return false so the click listener still works
         }
 
         holder.itemView.setOnLongClickListener {
@@ -80,30 +90,6 @@ class ExpenseAdapter(
 
         holder.itemView.setOnClickListener {
             onItemClick(currentExpense)
-        }
-
-        setPremiumEntranceAnimation(holder.itemView, position)
-    }
-
-    // ULTRA PREMIUM FEATURE 2: Staggered Spring Cascade
-    private fun setPremiumEntranceAnimation(viewToAnimate: View, position: Int) {
-        if (position > lastPosition) {
-            viewToAnimate.translationY = 150f
-            viewToAnimate.alpha = 0f
-            viewToAnimate.scaleX = 0.8f
-            viewToAnimate.scaleY = 0.8f
-
-            viewToAnimate.animate()
-                .translationY(0f)
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setInterpolator(OvershootInterpolator(1.8f)) // Bouncy overshoot
-                .setDuration(500)
-                .setStartDelay((position * 40).toLong()) // Staggered domino effect
-                .start()
-
-            lastPosition = position
         }
     }
 
@@ -126,7 +112,6 @@ class ExpenseAdapter(
 
     fun setExpenses(expenses: List<Expense>) {
         this.expenses = expenses
-        lastPosition = -1  // Reset animation state
         notifyDataSetChanged()
     }
 }

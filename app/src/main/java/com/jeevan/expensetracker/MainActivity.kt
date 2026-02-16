@@ -1,14 +1,15 @@
 package com.jeevan.expensetracker
 
-// --- IMPORTS START HERE ---
+// --- IMPORTS ---
 import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
-import android.app.DatePickerDialog  // <--- THIS IS THE CRITICAL MISSING LINE
+import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -48,6 +49,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
 import com.jeevan.expensetracker.data.Expense
@@ -60,7 +62,6 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
-// --- IMPORTS END HERE ---
 
 class MainActivity : AppCompatActivity() {
 
@@ -74,6 +75,10 @@ class MainActivity : AppCompatActivity() {
     private var oldBalanceAnimState: Double = 0.0
     private var oldIncomeAnimState: Double = 0.0
     private var oldExpenseAnimState: Double = 0.0
+
+    // --- FIX: SMART BUDGET CHECKER ---
+    private var shouldCheckBudget: Boolean = false
+    private var expenseBeforeAdd: Double = 0.0 // Stores value BEFORE save
 
     // UI Header
     private lateinit var tvDateHeader: TextView
@@ -94,22 +99,24 @@ class MainActivity : AppCompatActivity() {
 
         tvDateHeader = findViewById(R.id.tvDateHeader)
 
+        // --- BIOMETRIC LOCK ---
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
         val btnUnlockScreen = findViewById<Button>(R.id.btnUnlockScreen)
-
         val isAppLockEnabled = sharedPref.getBoolean("app_lock_enabled", false)
+
         if (isAppLockEnabled && !isSessionUnlocked) {
             lockedOverlay.visibility = View.VISIBLE
             launchBiometricLock(lockedOverlay)
         } else {
             lockedOverlay.visibility = View.GONE
         }
-
         btnUnlockScreen.setOnClickListener { launchBiometricLock(lockedOverlay) }
 
+        // --- WORK MANAGER ---
         val workRequest = PeriodicWorkRequestBuilder<RecurringExpenseWorker>(24, TimeUnit.HOURS).build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("RecurringExpenseWork", ExistingPeriodicWorkPolicy.KEEP, workRequest)
 
+        // --- VIEW MODEL ---
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
 
         val recyclerView = findViewById<RecyclerView>(R.id.rvExpenses)
@@ -120,6 +127,7 @@ class MainActivity : AppCompatActivity() {
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
 
+        // --- SEARCH ---
         val etSearch = findViewById<EditText>(R.id.etSearch)
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -129,6 +137,7 @@ class MainActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
+        // --- CATEGORY FILTER ---
         val spinnerCategoryFilter = findViewById<Spinner>(R.id.spinnerCategoryFilter)
         val filterCategories = mutableListOf("All Categories").apply {
             addAll(resources.getStringArray(R.array.categories))
@@ -146,6 +155,7 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
+        // --- OBSERVERS ---
         expenseViewModel.filteredExpenses.observe(this) { expenses ->
             expenses?.let { adapter.setExpenses(it) }
         }
@@ -161,13 +171,24 @@ class MainActivity : AppCompatActivity() {
             updateBalance(tvBalanceAmount)
         }
 
+        // --- FIXED TOTAL EXPENSE OBSERVER ---
         expenseViewModel.totalExpenses.observe(this) { expense ->
             currentExpense = expense ?: 0.0
             animateNumberRoll(tvExpenseAmount, oldExpenseAnimState, currentExpense)
             oldExpenseAnimState = currentExpense
             updateBalance(tvBalanceAmount)
+
+            // THE FIX:
+            // 1. Check if we are supposed to check budget
+            // 2. AND Check if the amount actually changed (is greater than what it was before add)
+            // This prevents the "Old Data" popup.
+            if (shouldCheckBudget && currentExpense > expenseBeforeAdd) {
+                checkBudgetStatus()
+                shouldCheckBudget = false
+            }
         }
 
+        // --- BUTTONS ---
         val fabAddExpense = findViewById<FloatingActionButton>(R.id.fabAddExpense)
         fabAddExpense.setOnTouchListener { v, event ->
             when (event.action) {
@@ -210,6 +231,7 @@ class MainActivity : AppCompatActivity() {
         checkAndRequestPermissions()
     }
 
+    // --- ANIMATIONS & PHYSICS ---
     private fun setupThemeButtonPhysics(button: Button) {
         button.setOnClickListener {
             if (!button.isEnabled) return@setOnClickListener
@@ -324,6 +346,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // --- BIOMETRICS ---
     private fun launchBiometricLock(overlay: View) {
         val executor = ContextCompat.getMainExecutor(this)
         val biometricPrompt = BiometricPrompt(this, executor,
@@ -392,6 +415,7 @@ class MainActivity : AppCompatActivity() {
         return flat != null && flat.contains(pkgName)
     }
 
+    // --- DIALOGS ---
     private fun showAddExpenseDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
@@ -423,9 +447,16 @@ class MainActivity : AppCompatActivity() {
                 return@applySquishPhysics
             }
 
+            // FIX: Capture value BEFORE insert
+            expenseBeforeAdd = currentExpense
+
             expenseViewModel.insert(Expense(amount = amount, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
             dialog.dismiss()
-            if (type == "Expense") checkBudgetStatus()
+
+            // FIX: Enable flag
+            if (type == "Expense") {
+                shouldCheckBudget = true
+            }
         }
         applySquishPhysics(btnCancel) { dialog.dismiss() }
         dialog.show()
@@ -475,9 +506,15 @@ class MainActivity : AppCompatActivity() {
                 return@applySquishPhysics
             }
 
+            // FIX: Capture value BEFORE update
+            expenseBeforeAdd = currentExpense
+
             expenseViewModel.update(expense.copy(amount = amount, category = spinnerCategory.selectedItem.toString(), description = description, type = type, isRecurring = cbRecurring.isChecked))
             dialog.dismiss()
-            if (type == "Expense") checkBudgetStatus()
+
+            if (type == "Expense") {
+                shouldCheckBudget = true
+            }
         }
         applySquishPhysics(btnCancel) { dialog.dismiss() }
         dialog.show()
@@ -503,15 +540,59 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    // --- BUDGET CHECK LOGIC ---
     private fun checkBudgetStatus() {
         if (monthlyBudget <= 0) return
+
         val percentage = (currentExpense / monthlyBudget) * 100
+
+        // Only show if we crossed 80% threshold
         if (percentage >= 80) {
-            AlertDialog.Builder(this)
-                .setTitle(if (percentage >= 100) "⚠️ Budget Exceeded!" else "⚠️ Budget Warning")
-                .setMessage("You have used ${String.format("%.0f", percentage)}% of your budget.\nSpent: ₹${String.format("%.2f", currentExpense)}")
-                .setPositiveButton("OK", null)
-                .create().apply { window?.attributes?.windowAnimations = R.style.DialogAnimation; show() }
+
+            val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_budget_alert, null)
+            val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+
+            dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+            dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
+            val tvAlertIcon = dialogView.findViewById<TextView>(R.id.tvAlertIcon)
+            val tvAlertTitle = dialogView.findViewById<TextView>(R.id.tvAlertTitle)
+            val tvAlertMessage = dialogView.findViewById<TextView>(R.id.tvAlertMessage)
+            val progressBar = dialogView.findViewById<LinearProgressIndicator>(R.id.progressBarBudget)
+            val tvSpent = dialogView.findViewById<TextView>(R.id.tvSpent)
+            val tvLimit = dialogView.findViewById<TextView>(R.id.tvLimit)
+            val btnIgnore = dialogView.findViewById<Button>(R.id.btnIgnore)
+            val btnFixBudget = dialogView.findViewById<Button>(R.id.btnFixBudget)
+
+            // Logic: Critical if we are actually AT or OVER 100%
+            val isCritical = percentage >= 100
+            val color = if (isCritical) Color.parseColor("#D32F2F") else Color.parseColor("#FF9800")
+
+            tvAlertIcon.text = if (isCritical) "🚨" else "⚠️"
+            tvAlertTitle.text = if (isCritical) "Budget Exceeded!" else "Budget Warning"
+
+            // FIX: Use %.1f to show "99.7%" instead of rounding up to "100%"
+            tvAlertMessage.text = "You have used ${String.format("%.1f", percentage)}% of your monthly limit."
+
+            progressBar.progress = percentage.toInt().coerceAtMost(100)
+            progressBar.setIndicatorColor(color)
+
+            tvSpent.text = "Spent: ₹${String.format("%.2f", currentExpense)}"
+            tvSpent.setTextColor(color)
+            tvLimit.text = "Limit: ₹${String.format("%.2f", monthlyBudget)}"
+
+            if (isCritical) {
+                btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
+            } else {
+                btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
+            }
+
+            applySquishPhysics(btnIgnore) { dialog.dismiss() }
+            applySquishPhysics(btnFixBudget) {
+                dialog.dismiss()
+                showSetBudgetDialog()
+            }
+            dialog.show()
         }
     }
 
@@ -540,9 +621,8 @@ class MainActivity : AppCompatActivity() {
                     tvDateHeader.text = "Showing: Today (${dateFormat.format(Date())})"
                 }
                 R.id.radioThisWeek -> {
-                    calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY) // FORCE MONDAY START
+                    calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                     val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
-                    // End should include TODAY's full day
                     val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
 
                     expenseViewModel.setDateRangeFilter(start, end)
@@ -558,12 +638,10 @@ class MainActivity : AppCompatActivity() {
                     tvDateHeader.text = "Showing: This Month"
                 }
                 R.id.radioLastMonth -> {
-                    // Set to first day of current month, then subtract 1 month
                     calendar.set(Calendar.DAY_OF_MONTH, 1)
                     calendar.add(Calendar.MONTH, -1)
                     val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
 
-                    // Go to end of that month
                     calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
                     val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
 

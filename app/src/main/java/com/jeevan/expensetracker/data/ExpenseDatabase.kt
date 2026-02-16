@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-// FIX: Changed version from 1 to 2
+// CHANGE THIS: version = 2
 @Database(entities = [Expense::class], version = 2, exportSchema = false)
 abstract class ExpenseDatabase : RoomDatabase() {
 
@@ -22,8 +22,7 @@ abstract class ExpenseDatabase : RoomDatabase() {
                     ExpenseDatabase::class.java,
                     "expense_database"
                 )
-                    // FIX: This command allows the app to wipe the old database
-                    // and build the new one (Version 2) without crashing.
+                    // THIS LINE IS MANDATORY: It handles the upgrade safely
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
