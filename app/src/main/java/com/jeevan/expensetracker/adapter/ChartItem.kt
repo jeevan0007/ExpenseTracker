@@ -6,5 +6,5 @@ data class ChartItem(
     val percentage: Float,
     val color: Int,
     val emoji: String,
-    val formattedAmount: String // This fixes the currency display issue
+    val formattedAmount: String
 )
