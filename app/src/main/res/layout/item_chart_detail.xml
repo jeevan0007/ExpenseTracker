@@ -3,33 +3,41 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="12dp"
-    android:gravity="center_vertical"
-    android:background="?android:attr/selectableItemBackground">
+    android:padding="16dp"
+    android:gravity="center_vertical">
 
     <View
         android:id="@+id/viewColorIndicator"
-        android:layout_width="12dp"
-        android:layout_height="12dp"
-        android:background="@drawable/circle_shape"
-        android:layout_marginEnd="16dp"/>
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:background="#FF0000"
+        android:layout_marginEnd="16dp" />
 
     <TextView
-        android:id="@+id/tvCategoryName"
+        android:id="@+id/tvCategory"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:text="Category"
         android:textSize="16sp"
-        android:textColor="?android:attr/textColorPrimary"/>
+        android:textColor="?android:attr/textColorPrimary"
+        android:text="🍔 Food" />
 
     <TextView
-        android:id="@+id/tvCategoryAmount"
+        android:id="@+id/tvPercentage"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="₹0"
-        android:textStyle="bold"
+        android:textSize="14sp"
+        android:textColor="#888888"
+        android:layout_marginEnd="12dp"
+        android:text="25.5%" />
+
+    <TextView
+        android:id="@+id/tvAmount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:textSize="16sp"
-        android:textColor="?android:attr/textColorPrimary"/>
+        android:textStyle="bold"
+        android:textColor="?android:attr/textColorPrimary"
+        android:text="$ 120.00" />
 
 </LinearLayout>

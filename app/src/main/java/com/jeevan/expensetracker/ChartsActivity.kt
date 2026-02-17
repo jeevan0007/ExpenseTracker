@@ -33,7 +33,7 @@ class ChartsActivity : AppCompatActivity() {
     private var chartItemList: List<ChartItem> = ArrayList()
     private var totalSpentAmount: Double = 0.0
 
-    // --- CURRENCY LOGIC (Global variables) ---
+    // --- CURRENCY STATE (Global Variables) ---
     private var activeRate: Double = 1.0
     private lateinit var activeFormat: NumberFormat
 
@@ -41,10 +41,13 @@ class ChartsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_charts)
 
-        // 1. Initialize Currency from Intent
-        activeRate = intent.getDoubleExtra("CURRENCY_RATE", 1.0)
-        val localeParts = intent.getStringExtra("CURRENCY_LOCALE")?.split("_") ?: listOf("en", "IN")
-        val activeLocale = if (localeParts.size > 1) Locale(localeParts[0], localeParts[1]) else Locale("en", "IN")
+        // 1. LOAD PERSISTENT DATA (Fixes the reset bug)
+        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        activeRate = sharedPref.getFloat("currency_rate", 1.0f).toDouble()
+        val lang = sharedPref.getString("currency_lang", "en") ?: "en"
+        val country = sharedPref.getString("currency_country", "IN") ?: "IN"
+        val activeLocale = Locale(lang, country)
+
         activeFormat = NumberFormat.getCurrencyInstance(activeLocale)
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -86,11 +89,15 @@ class ChartsActivity : AppCompatActivity() {
             val color = palette[index % palette.size]
             val emoji = getCategoryEmoji(entry.key)
 
-            // Multiplied value for Entry (Pie Slice)
-            entries.add(PieEntry((entry.value * activeRate).toFloat(), entry.key))
+            // Convert Logic: Raw Amount * Rate
+            val convertedAmount = entry.value * activeRate
+            val formattedString = activeFormat.format(convertedAmount)
 
-            // Multiplied value for List Item
-            chartItems.add(ChartItem(entry.key, entry.value * activeRate, percentage, color, emoji))
+            // Add to Chart (Pie Slice)
+            entries.add(PieEntry(convertedAmount.toFloat(), entry.key))
+
+            // Add to List (Bottom Recycler) - Passing the formatted string!
+            chartItems.add(ChartItem(entry.key, convertedAmount, percentage, color, emoji, formattedString))
         }
 
         this.chartItemList = chartItems
@@ -113,7 +120,6 @@ class ChartsActivity : AppCompatActivity() {
         pieChart.holeRadius = 70f
         pieChart.transparentCircleRadius = 75f
 
-        // Use activeRate for center text
         updateCenterText("Total", totalSpentAmount)
 
         pieChart.animateY(1400, Easing.EaseInOutQuad)
@@ -124,10 +130,9 @@ class ChartsActivity : AppCompatActivity() {
                 val pieEntry = e as? PieEntry
                 val label = pieEntry?.label ?: "Unknown"
 
-                // The value here is already multiplied in the entries.add step above
+                // Value is already converted in the Entry
                 val amount = pieEntry?.value?.toDouble() ?: 0.0
 
-                // Pass the already-converted amount to center text
                 updateCenterTextSelected(label, amount)
 
                 val index = h.x.toInt()
@@ -144,18 +149,21 @@ class ChartsActivity : AppCompatActivity() {
         pieChart.invalidate()
 
         rvDetails.adapter = ChartDetailAdapter(chartItems)
+
+        // Update Bottom Total Text
         tvTotalAmount.text = "Total Spending: ${activeFormat.format(totalSpentAmount * activeRate)}"
     }
 
-    private fun updateCenterText(label: String, amount: Double) {
-        // Multiplies the raw amount by activeRate for display
-        pieChart.centerText = "$label\n${activeFormat.format(amount * activeRate)}"
+    private fun updateCenterText(label: String, rawAmount: Double) {
+        // Multiplies raw amount by rate for display
+        val converted = rawAmount * activeRate
+        pieChart.centerText = "$label\n${activeFormat.format(converted)}"
         pieChart.setCenterTextSize(22f)
         pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
     }
 
     private fun updateCenterTextSelected(label: String, convertedAmount: Double) {
-        // This helper is for when the amount is already multiplied (from the PieEntry)
+        // Helper for when amount is already converted (from PieEntry)
         pieChart.centerText = "$label\n${activeFormat.format(convertedAmount)}"
         pieChart.setCenterTextSize(22f)
         pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)

@@ -77,7 +77,7 @@ class MainActivity : AppCompatActivity() {
     // UI Header
     private lateinit var tvDateHeader: TextView
 
-    // --- CURRENCY STATE ---
+    // --- CURRENCY STATE (PERSISTENT) ---
     private var activeCurrencyRate = 1.0
     private var activeCurrencyLocale = Locale("en", "IN")
     private var isTravelModeActive = false
@@ -91,9 +91,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        loadSavedTheme()
-
+        // 1. LOAD SAVED THEME & CURRENCY IMMEDIATELY
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        loadSavedTheme(sharedPref)
+        loadSavedCurrency(sharedPref) // <--- CRITICAL FIX
+
         monthlyBudget = sharedPref.getFloat("monthly_budget", 0f).toDouble()
 
         tvDateHeader = findViewById(R.id.tvDateHeader)
@@ -124,6 +126,9 @@ class MainActivity : AppCompatActivity() {
             onItemLongClick = { expense -> showDeleteDialog(expense) },
             onItemClick = { expense -> showEditDialog(expense) }
         )
+        // APPLY SAVED CURRENCY TO ADAPTER NOW
+        adapter.updateCurrency(activeCurrencyRate, activeCurrencyLocale)
+
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
 
@@ -201,8 +206,12 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        // --- TRAVEL MODE FAB ---
+        // --- v2.0 TRAVEL MODE: FAB LISTENER ---
         val fabTravelMode = findViewById<FloatingActionButton>(R.id.fabTravelMode)
+        // Set initial color based on loaded state
+        val initialColor = if (isTravelModeActive) "#4CAF50" else "#FF9800"
+        fabTravelMode.backgroundTintList = ColorStateList.valueOf(Color.parseColor(initialColor))
+
         fabTravelMode.setOnClickListener {
             vibratePhone()
             showCurrencyDialog(fabTravelMode)
@@ -233,8 +242,7 @@ class MainActivity : AppCompatActivity() {
 
         applySquishPhysics(findViewById<Button>(R.id.btnViewCharts)) {
             val intent = Intent(this, ChartsActivity::class.java)
-            intent.putExtra("CURRENCY_RATE", activeCurrencyRate)
-            intent.putExtra("CURRENCY_LOCALE", activeCurrencyLocale.language + "_" + activeCurrencyLocale.country)
+            // No extras needed anymore, ChartsActivity reads Prefs
             startActivity(intent)
             overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
         }
@@ -255,43 +263,152 @@ class MainActivity : AppCompatActivity() {
         checkAndRequestPermissions()
     }
 
-    // --- CURRENCY LOGIC ---
+    // --- SAVE & LOAD CURRENCY PREFS ---
+    private fun loadSavedCurrency(sharedPref: android.content.SharedPreferences) {
+        activeCurrencyRate = sharedPref.getFloat("currency_rate", 1.0f).toDouble()
+        val lang = sharedPref.getString("currency_lang", "en") ?: "en"
+        val country = sharedPref.getString("currency_country", "IN") ?: "IN"
+        activeCurrencyLocale = Locale(lang, country)
+        isTravelModeActive = activeCurrencyRate != 1.0
+    }
+
+    private fun saveCurrencyPrefs(rate: Double, locale: Locale) {
+        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        sharedPref.edit().apply {
+            putFloat("currency_rate", rate.toFloat())
+            putString("currency_lang", locale.language)
+            putString("currency_country", locale.country)
+            apply()
+        }
+    }
+
+    // --- CURRENCY DIALOG ---
     private fun showCurrencyDialog(fab: FloatingActionButton) {
-        val currencies = arrayOf("🇮🇳 INR", "🇺🇸 USD", "🇪🇺 EUR", "🇬🇧 GBP", "🇯🇵 JPY", "🇨🇳 CNY")
+        val currencies = arrayOf(
+            "🇮🇳 INR (Base)",
+            "🇺🇸 USD ($)",
+            "🇪🇺 EUR (€)",
+            "🇬🇧 GBP (£)",
+            "🇯🇵 JPY (¥)",
+            "🇨🇳 CNY (¥)"
+        )
+
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Select Travel Currency")
         builder.setItems(currencies) { _, which ->
             when (which) {
-                0 -> setCurrency(1.0, Locale("en", "IN"), false)
-                1 -> setCurrency(0.012, Locale.US, true)
-                2 -> setCurrency(0.011, Locale.GERMANY, true)
-                3 -> setCurrency(0.0095, Locale.UK, true)
-                4 -> setCurrency(1.75, Locale.JAPAN, true)
-                5 -> setCurrency(0.087, Locale.CHINA, true)
+                0 -> setCurrency(1.0, Locale("en", "IN"), false) // INR
+                1 -> setCurrency(0.012, Locale.US, true)         // USD
+                2 -> setCurrency(0.011, Locale.GERMANY, true)    // EUR
+                3 -> setCurrency(0.0095, Locale.UK, true)        // GBP
+                4 -> setCurrency(1.75, Locale.JAPAN, true)       // JPY
+                5 -> setCurrency(0.087, Locale.CHINA, true)      // CNY
             }
-            val color = if (isTravelModeActive) "#4CAF50" else "#FF9800"
-            fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor(color))
+
+            if (isTravelModeActive) {
+                fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#4CAF50"))
+            } else {
+                fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF9800"))
+            }
         }
-        builder.show()
+        val dialog = builder.create()
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+        dialog.show()
     }
 
     private fun setCurrency(rate: Double, locale: Locale, isTravel: Boolean) {
         activeCurrencyRate = rate
         activeCurrencyLocale = locale
         isTravelModeActive = isTravel
+
+        // Save to Disk Immediately
+        saveCurrencyPrefs(rate, locale)
+
+        // Update UI
         adapter.updateCurrency(rate, locale)
         updateHeaderCurrency()
+
+        val msg = if (isTravel) "Currency: ${locale.displayCountry}" else "Currency: INR (Home)"
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun updateHeaderCurrency() {
         val tvBalance = findViewById<TextView>(R.id.tvBalanceAmount)
         val tvIncome = findViewById<TextView>(R.id.tvIncomeAmount)
         val tvExpense = findViewById<TextView>(R.id.tvExpenseAmount)
+
         val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
 
-        tvBalance.text = format.format((currentIncome - currentExpense) * activeCurrencyRate)
-        tvIncome.text = format.format(currentIncome * activeCurrencyRate)
-        tvExpense.text = format.format(currentExpense * activeCurrencyRate)
+        val dispBalance = (currentIncome - currentExpense) * activeCurrencyRate
+        val dispIncome = currentIncome * activeCurrencyRate
+        val dispExpense = currentExpense * activeCurrencyRate
+
+        tvBalance.text = format.format(dispBalance)
+        tvIncome.text = format.format(dispIncome)
+        tvExpense.text = format.format(dispExpense)
+    }
+
+    // --- v2.0 SECRET CAT MODE (SAFE & DISPOSABLE) ---
+    private fun triggerSecretCatMode() {
+        val rootLayout = window.decorView as ViewGroup
+
+        val tempOverlay = View(this)
+        tempOverlay.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        tempOverlay.setBackgroundColor(Color.parseColor("#1A2530"))
+        tempOverlay.alpha = 0f
+        tempOverlay.isClickable = true
+        tempOverlay.isFocusable = true
+
+        val tempCatView = LottieAnimationView(this)
+        val catParams = FrameLayout.LayoutParams(dpToPx(350), dpToPx(350))
+        catParams.gravity = android.view.Gravity.CENTER
+        tempCatView.layoutParams = catParams
+        tempCatView.setAnimation(R.raw.error_cat)
+
+        rootLayout.addView(tempOverlay)
+        rootLayout.addView(tempCatView)
+
+        tempCatView.playAnimation()
+        vibrateGlitchPattern()
+
+        val flicker = ValueAnimator.ofFloat(0f, 0.85f, 0.2f, 0.85f, 0.9f)
+        flicker.duration = 400
+        flicker.addUpdateListener { animation ->
+            tempOverlay.alpha = animation.animatedValue as Float
+        }
+        flicker.start()
+
+        tempCatView.addAnimatorListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                tempCatView.animate().alpha(0f).setDuration(400).start()
+                tempOverlay.animate().alpha(0f).setDuration(600).withEndAction {
+                    rootLayout.removeView(tempOverlay)
+                    rootLayout.removeView(tempCatView)
+                }.start()
+                Toast.makeText(this@MainActivity, "G1 says Balance is purr-fect 😼", Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
+    }
+
+    private fun vibrateGlitchPattern() {
+        val vibrator = getVibrator()
+        val timings = longArrayOf(0, 40, 80, 40, 150, 60)
+        val amplitudes = intArrayOf(0, 160, 0, 200, 0, 180)
+
+        if (vibrator.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
+            } else {
+                @Suppress("DEPRECATION") vibrator.vibrate(400)
+            }
+        }
     }
 
     // --- SPIRIT ANIMAL THEME TOGGLE ---
@@ -300,11 +417,14 @@ class MainActivity : AppCompatActivity() {
             if (!button.isEnabled) return@setOnClickListener
             button.isEnabled = false
             vibratePhone()
+
             val isDark = AppCompatDelegate.getDefaultNightMode() != AppCompatDelegate.MODE_NIGHT_YES
+
             triggerSpiritAnimation(isDark) {
                 val newMode = if (isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
                 getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putInt("theme_mode", newMode).apply()
                 AppCompatDelegate.setDefaultNightMode(newMode)
+
                 button.text = if (isDark) "☀️ Light Mode" else "🌙 Dark Mode"
                 button.isEnabled = true
             }
@@ -314,16 +434,33 @@ class MainActivity : AppCompatActivity() {
     private fun triggerSpiritAnimation(isDark: Boolean, onThemeSwitch: () -> Unit) {
         val animationFile = if (isDark) R.raw.wolf_howl else R.raw.sun_inspire
         lottieAnimationView.setAnimation(animationFile)
+
         lottieAnimationView.visibility = View.VISIBLE
         lottieAnimationView.bringToFront()
+        lottieAnimationView.progress = 0f
+        lottieAnimationView.alpha = 1f
+        lottieAnimationView.scaleX = 1.1f
+        lottieAnimationView.scaleY = 1.1f
+
+        lottieAnimationView.removeAllAnimatorListeners()
+
         lottieAnimationView.playAnimation()
+
         lottieAnimationView.postDelayed({
             onThemeSwitch()
+
             if (isDark) {
                 vibratePhone()
                 shakeHeaderCard()
+                lottieAnimationView.pauseAnimation()
+
                 lottieAnimationView.postDelayed({
-                    lottieAnimationView.animate().alpha(0f).setDuration(500).withEndAction { lottieAnimationView.visibility = View.GONE }.start()
+                    lottieAnimationView.resumeAnimation()
+                    lottieAnimationView.animate()
+                        .alpha(0f)
+                        .setDuration(500)
+                        .withEndAction { lottieAnimationView.visibility = View.GONE }
+                        .start()
                 }, 800)
             } else {
                 lottieAnimationView.postDelayed({
@@ -337,71 +474,33 @@ class MainActivity : AppCompatActivity() {
         val headerCard = findViewById<MaterialCardView>(R.id.headerCard)
         val shakeAnimator = ValueAnimator.ofFloat(0f, 15f, -15f, 10f, -10f, 5f, -5f, 0f)
         shakeAnimator.duration = 500
-        shakeAnimator.addUpdateListener { headerCard.translationX = it.animatedValue as Float }
+        shakeAnimator.addUpdateListener { animation ->
+            val value = animation.animatedValue as Float
+            headerCard.translationX = value
+            headerCard.translationY = value / 2
+        }
         shakeAnimator.start()
-    }
-
-    // --- v2.0 SECRET CAT MODE (SAFE & DISPOSABLE) ---
-    private fun triggerSecretCatMode() {
-        val rootLayout = window.decorView as ViewGroup
-        val tempOverlay = View(this).apply {
-            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            setBackgroundColor(Color.parseColor("#1A2530"))
-            alpha = 0f
-            isClickable = true
-            isFocusable = true
-        }
-        val tempCatView = LottieAnimationView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(dpToPx(350), dpToPx(350)).apply { gravity = android.view.Gravity.CENTER }
-            setAnimation(R.raw.error_cat)
-        }
-        rootLayout.addView(tempOverlay)
-        rootLayout.addView(tempCatView)
-        tempCatView.playAnimation()
-        vibrateGlitchPattern()
-        ValueAnimator.ofFloat(0f, 0.85f, 0.2f, 0.85f, 0.9f).apply {
-            duration = 400
-            addUpdateListener { tempOverlay.alpha = it.animatedValue as Float }
-            start()
-        }
-        tempCatView.addAnimatorListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: Animator) {
-                tempCatView.animate().alpha(0f).setDuration(400).start()
-                tempOverlay.animate().alpha(0f).setDuration(600).withEndAction {
-                    rootLayout.removeView(tempOverlay)
-                    rootLayout.removeView(tempCatView)
-                }.start()
-                Toast.makeText(this@MainActivity, "G1 says Balance is purr-fect 😼", Toast.LENGTH_SHORT).show()
-            }
-        })
-    }
-
-    private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
-
-    private fun vibrateGlitchPattern() {
-        val vibrator = getVibrator()
-        val timings = longArrayOf(0, 40, 80, 40, 150, 60)
-        val amplitudes = intArrayOf(0, 160, 0, 200, 0, 180)
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
-            } else {
-                @Suppress("DEPRECATION") vibrator.vibrate(400)
-            }
-        }
     }
 
     private fun animateNumberRoll(textView: TextView, oldValue: Double, newValue: Double) {
         val animator = ValueAnimator.ofFloat(oldValue.toFloat(), newValue.toFloat())
         animator.duration = 1500
         animator.interpolator = DecelerateInterpolator(1.5f)
+
+        // UPDATED: Use the ACTIVE currency locale, not hardcoded IN
         val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
-        animator.addUpdateListener {
-            textView.text = format.format((it.animatedValue as Float) * activeCurrencyRate.toFloat())
+
+        animator.addUpdateListener { animation ->
+            // Use activeCurrencyRate for multiplication
+            val displayValue = (animation.animatedValue as Float) * activeCurrencyRate.toFloat()
+            textView.text = format.format(displayValue)
         }
+
         animator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                if (abs(oldValue - newValue) > 1) vibratePhoneLight()
+                if (abs(oldValue - newValue) > 1) {
+                    vibratePhoneLight()
+                }
             }
         })
         animator.start()
@@ -409,8 +508,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBalance(tvBalance: TextView) {
         val newBalance = currentIncome - currentExpense
-        if (isTravelModeActive) updateHeaderCurrency()
-        else {
+        // If Travel Mode is on, just update text directly to avoid jumping symbols
+        if (isTravelModeActive) {
+            updateHeaderCurrency()
+        } else {
             animateNumberRoll(tvBalance, oldBalanceAnimState, newBalance)
             oldBalanceAnimState = newBalance
         }
@@ -419,171 +520,406 @@ class MainActivity : AppCompatActivity() {
     private fun applySquishPhysics(view: View, onClickAction: () -> Unit) {
         view.setOnTouchListener { v, event ->
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.92f).scaleY(0.92f).setDuration(100).start()
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().scaleX(0.92f).scaleY(0.92f).setDuration(100).setInterpolator(DecelerateInterpolator()).start()
+                }
                 MotionEvent.ACTION_UP -> {
                     vibratePhoneLight()
                     v.animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(2f)).start()
                     onClickAction()
                 }
-                MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).start()
+                MotionEvent.ACTION_CANCEL -> {
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(2f)).start()
+                }
             }
             true
         }
     }
 
-    private fun getVibrator(): Vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator else @Suppress("DEPRECATION") getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-    private fun vibratePhoneLight() { if (getVibrator().hasVibrator()) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getVibrator().vibrate(VibrationEffect.createOneShot(20, 50)) else @Suppress("DEPRECATION") getVibrator().vibrate(20) } }
-    private fun vibratePhone() { if (getVibrator().hasVibrator()) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getVibrator().vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)) else @Suppress("DEPRECATION") getVibrator().vibrate(50) } }
+    private fun getVibrator(): Vibrator {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+    }
 
+    private fun vibratePhoneLight() {
+        val vibrator = getVibrator()
+        if (vibrator.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(20, 50))
+            } else {
+                @Suppress("DEPRECATION") vibrator.vibrate(20)
+            }
+        }
+    }
+
+    private fun vibratePhone() {
+        val vibrator = getVibrator()
+        if (vibrator.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION") vibrator.vibrate(50)
+            }
+        }
+    }
+
+    // --- DIALOGS & HELPERS ---
     private fun launchBiometricLock(overlay: View) {
         val executor = ContextCompat.getMainExecutor(this)
-        val biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                super.onAuthenticationSucceeded(result)
-                isSessionUnlocked = true
-                overlay.animate().alpha(0f).setDuration(400).withEndAction { overlay.visibility = View.GONE }.start()
-            }
-        })
-        val promptInfo = BiometricPrompt.PromptInfo.Builder().setTitle("Unlock").setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL).build()
+        val biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    Toast.makeText(applicationContext, "App locked.", Toast.LENGTH_SHORT).show()
+                }
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    isSessionUnlocked = true
+                    overlay.animate().alpha(0f).setDuration(400).withEndAction { overlay.visibility = View.GONE }.start()
+                }
+            })
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Expense Tracker")
+            .setSubtitle("Authenticate to view your data")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .build()
         biometricPrompt.authenticate(promptInfo)
     }
 
     private fun toggleAppLock(button: Button) {
-        val sp = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
-        val enabled = !sp.getBoolean("app_lock_enabled", false)
-        sp.edit().putBoolean("app_lock_enabled", enabled).apply()
-        updateAppLockButtonText(button)
-        if (!enabled) isSessionUnlocked = true
+        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        val isCurrentlyEnabled = sharedPref.getBoolean("app_lock_enabled", false)
+
+        val executor = ContextCompat.getMainExecutor(this)
+        val biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    val newState = !isCurrentlyEnabled
+                    sharedPref.edit().putBoolean("app_lock_enabled", newState).apply()
+                    updateAppLockButtonText(button)
+                    if (!newState) isSessionUnlocked = true
+                    Toast.makeText(applicationContext, "App Lock ${if (newState) "enabled" else "disabled"}!", Toast.LENGTH_SHORT).show()
+                }
+            })
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(if (isCurrentlyEnabled) "Disable App Lock" else "Enable App Lock")
+            .setSubtitle("Authenticate to confirm")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .build()
+        biometricPrompt.authenticate(promptInfo)
     }
 
-    private fun updateAppLockButtonText(button: Button) { button.text = if (getSharedPreferences("ExpenseTracker", MODE_PRIVATE).getBoolean("app_lock_enabled", false)) "🔒 Lock: ON" else "🔓 Lock: OFF" }
+    private fun updateAppLockButtonText(button: Button) {
+        val isEnabled = getSharedPreferences("ExpenseTracker", MODE_PRIVATE).getBoolean("app_lock_enabled", false)
+        button.text = if (isEnabled) "🔒 Lock: ON" else "🔓 Lock: OFF"
+    }
 
     private fun checkAndRequestPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
-        if (Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) != true) {
-            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            Toast.makeText(this, "Enable Access for Auto-Tracking", Toast.LENGTH_SHORT).show()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
         }
+        if (!isNotificationServiceEnabled()) {
+            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            startActivity(intent)
+            Toast.makeText(this, "Enable Notification Access to track UPI automatically", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun isNotificationServiceEnabled(): Boolean {
+        val pkgName = packageName
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        return flat != null && flat.contains(pkgName)
     }
 
     private fun showAddExpenseDialog() {
-        val view = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
-        val dialog = AlertDialog.Builder(this).setView(view).create()
-        val catSpinner = view.findViewById<Spinner>(R.id.spinnerCategory)
-        val cats = resources.getStringArray(R.array.categories).toMutableList().apply { add("Salary"); add("Automated") }
-        catSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, cats).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-        view.findViewById<Button>(R.id.btnSave).setOnClickListener {
-            val amt = view.findViewById<TextInputEditText>(R.id.etAmount).text.toString().toDoubleOrNull()
-            if (amt != null && amt > 0) {
-                expenseBeforeAdd = currentExpense
-                expenseViewModel.insert(Expense(amount = amt, category = catSpinner.selectedItem.toString(), description = view.findViewById<TextInputEditText>(R.id.etDescription).text.toString(), type = if (view.findViewById<RadioGroup>(R.id.radioGroupType).checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense", isRecurring = view.findViewById<CheckBox>(R.id.cbRecurring).isChecked))
-                dialog.dismiss()
-                if (view.findViewById<RadioGroup>(R.id.radioGroupType).checkedRadioButtonId == R.id.radioExpense) shouldCheckBudget = true
-            }
-        }
-        view.findViewById<Button>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
-        dialog.show()
-    }
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
-    private fun showEditDialog(expense: Expense) {
-        val view = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
-        val dialog = AlertDialog.Builder(this).setView(view).create()
-        val amtEt = view.findViewById<TextInputEditText>(R.id.etAmount).apply { setText(expense.amount.toString()) }
-        val descEt = view.findViewById<TextInputEditText>(R.id.etDescription).apply { setText(expense.description) }
-        val catSpinner = view.findViewById<Spinner>(R.id.spinnerCategory)
-        val cats = resources.getStringArray(R.array.categories).toMutableList().apply { add("Salary"); add("Automated") }
-        catSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, cats).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-        catSpinner.setSelection(cats.indexOf(expense.category))
-        view.findViewById<RadioGroup>(R.id.radioGroupType).check(if (expense.type == "Income") R.id.radioIncome else R.id.radioExpense)
-        view.findViewById<CheckBox>(R.id.cbRecurring).isChecked = expense.isRecurring
-        view.findViewById<Button>(R.id.btnSave).apply { text = "Update" }.setOnClickListener {
-            val amt = amtEt.text.toString().toDoubleOrNull()
-            if (amt != null && amt > 0) {
-                expenseViewModel.update(expense.copy(amount = amt, category = catSpinner.selectedItem.toString(), description = descEt.text.toString(), type = if (view.findViewById<RadioGroup>(R.id.radioGroupType).checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense", isRecurring = view.findViewById<CheckBox>(R.id.cbRecurring).isChecked))
-                dialog.dismiss()
+        val radioGroupType = dialogView.findViewById<RadioGroup>(R.id.radioGroupType)
+        val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
+        val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
+        val spinnerCategory = dialogView.findViewById<Spinner>(R.id.spinnerCategory)
+        val cbRecurring = dialogView.findViewById<CheckBox>(R.id.cbRecurring)
+        val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
+
+        val categories = resources.getStringArray(R.array.categories).toMutableList()
+        categories.add("Salary"); categories.add("Automated")
+        val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
+        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerCategory.adapter = spinnerAdapter
+
+        applySquishPhysics(btnSave) {
+            val amountText = etAmount.text.toString()
+            val description = etDescription.text.toString()
+            val category = spinnerCategory.selectedItem.toString()
+            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
+
+            val amount = amountText.toDoubleOrNull()
+            if (amount == null || amount <= 0 || description.isEmpty()) {
+                Toast.makeText(this, "Please enter valid details", Toast.LENGTH_SHORT).show()
+                return@applySquishPhysics
+            }
+
+            expenseBeforeAdd = currentExpense
+
+            expenseViewModel.insert(Expense(amount = amount, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
+            dialog.dismiss()
+
+            if (type == "Expense") {
+                shouldCheckBudget = true
             }
         }
-        view.findViewById<Button>(R.id.btnCancel).setOnClickListener { dialog.dismiss() }
+        applySquishPhysics(btnCancel) { dialog.dismiss() }
         dialog.show()
     }
 
     private fun showDeleteDialog(expense: Expense) {
-        val view = LayoutInflater.from(this).inflate(R.layout.dialog_confirm_delete, null)
-        val dialog = AlertDialog.Builder(this).setView(view).create()
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_confirm_delete, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        view.findViewById<TextView>(R.id.tvDeleteMessage).text = "Delete \"${expense.description}\"?"
-        view.findViewById<Button>(R.id.btnConfirmDelete).setOnClickListener { vibratePhone(); expenseViewModel.delete(expense); dialog.dismiss() }
-        view.findViewById<Button>(R.id.btnCancelDelete).setOnClickListener { dialog.dismiss() }
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
+        val tvDeleteMessage = dialogView.findViewById<TextView>(R.id.tvDeleteMessage)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancelDelete)
+        val btnConfirm = dialogView.findViewById<Button>(R.id.btnConfirmDelete)
+
+        tvDeleteMessage.text = "Delete \"${expense.description}\"?"
+
+        applySquishPhysics(btnCancel) {
+            dialog.dismiss()
+        }
+
+        applySquishPhysics(btnConfirm) {
+            vibratePhone()
+            expenseViewModel.delete(expense)
+            dialog.dismiss()
+            Toast.makeText(this, "Transaction Deleted", Toast.LENGTH_SHORT).show()
+        }
+
+        dialog.show()
+    }
+
+    private fun showEditDialog(expense: Expense) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
+        val radioGroupType = dialogView.findViewById<RadioGroup>(R.id.radioGroupType)
+        val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
+        val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
+        val spinnerCategory = dialogView.findViewById<Spinner>(R.id.spinnerCategory)
+        val cbRecurring = dialogView.findViewById<CheckBox>(R.id.cbRecurring)
+        val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
+
+        val categories = resources.getStringArray(R.array.categories).toMutableList()
+        categories.add("Salary"); categories.add("Automated")
+        spinnerCategory.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+        etAmount.setText(expense.amount.toString())
+        etDescription.setText(expense.description)
+        cbRecurring.isChecked = expense.isRecurring
+        radioGroupType.check(if (expense.type == "Income") R.id.radioIncome else R.id.radioExpense)
+        categories.indexOf(expense.category).takeIf { it >= 0 }?.let { spinnerCategory.setSelection(it) }
+
+        btnSave.text = "Update"
+        applySquishPhysics(btnSave) {
+            val amountText = etAmount.text.toString()
+            val description = etDescription.text.toString()
+            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
+
+            val amount = amountText.toDoubleOrNull()
+            if (amount == null || amount <= 0 || description.isEmpty()) {
+                Toast.makeText(this, "Please enter valid details", Toast.LENGTH_SHORT).show()
+                return@applySquishPhysics
+            }
+
+            expenseBeforeAdd = currentExpense
+
+            expenseViewModel.update(expense.copy(amount = amount, category = spinnerCategory.selectedItem.toString(), description = description, type = type, isRecurring = cbRecurring.isChecked))
+            dialog.dismiss()
+
+            if (type == "Expense") {
+                shouldCheckBudget = true
+            }
+        }
+        applySquishPhysics(btnCancel) { dialog.dismiss() }
         dialog.show()
     }
 
     private fun showSetBudgetDialog() {
-        val view = LayoutInflater.from(this).inflate(R.layout.dialog_set_budget, null)
-        val dialog = AlertDialog.Builder(this).setView(view).create()
-        val budgetEt = view.findViewById<TextInputEditText>(R.id.etBudget).apply { if (monthlyBudget > 0) setText(monthlyBudget.toString()) }
-        view.findViewById<Button>(R.id.btnSaveBudget).setOnClickListener {
-            val b = budgetEt.text.toString().toDoubleOrNull()
-            if (b != null && b > 0) {
-                monthlyBudget = b
-                getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putFloat("monthly_budget", b.toFloat()).apply()
-                dialog.dismiss()
-                checkBudgetStatus()
-            }
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_set_budget, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
+        val etBudget = dialogView.findViewById<TextInputEditText>(R.id.etBudget)
+        if (monthlyBudget > 0) etBudget.setText(monthlyBudget.toString())
+
+        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnSaveBudget)) {
+            val budget = etBudget.text.toString().toDoubleOrNull()
+            if (budget == null || budget <= 0) return@applySquishPhysics
+            monthlyBudget = budget
+            getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putFloat("monthly_budget", budget.toFloat()).apply()
+            dialog.dismiss()
+            checkBudgetStatus()
         }
-        view.findViewById<Button>(R.id.btnCancelBudget).setOnClickListener { dialog.dismiss() }
+        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnCancelBudget)) { dialog.dismiss() }
         dialog.show()
     }
 
     private fun checkBudgetStatus() {
         if (monthlyBudget <= 0) return
+
         val percentage = (currentExpense / monthlyBudget) * 100
+
         if (percentage >= 80) {
-            val view = LayoutInflater.from(this).inflate(R.layout.dialog_budget_alert, null)
-            val dialog = AlertDialog.Builder(this).setView(view).create()
+            val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_budget_alert, null)
+            val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+
             dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+            dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
+            val tvAlertIcon = dialogView.findViewById<TextView>(R.id.tvAlertIcon)
+            val tvAlertTitle = dialogView.findViewById<TextView>(R.id.tvAlertTitle)
+            val tvAlertMessage = dialogView.findViewById<TextView>(R.id.tvAlertMessage)
+            val progressBar = dialogView.findViewById<LinearProgressIndicator>(R.id.progressBarBudget)
+            val tvSpent = dialogView.findViewById<TextView>(R.id.tvSpent)
+            val tvLimit = dialogView.findViewById<TextView>(R.id.tvLimit)
+            val btnIgnore = dialogView.findViewById<Button>(R.id.btnIgnore)
+            val btnFixBudget = dialogView.findViewById<Button>(R.id.btnFixBudget)
+
+            val isCritical = percentage >= 100
+            val color = if (isCritical) Color.parseColor("#D32F2F") else Color.parseColor("#FF9800")
+
+            tvAlertIcon.text = if (isCritical) "🚨" else "⚠️"
+            tvAlertTitle.text = if (isCritical) "Budget Exceeded!" else "Budget Warning"
+
+            tvAlertMessage.text = "You have used ${String.format("%.1f", percentage)}% of your monthly limit."
+
+            progressBar.progress = percentage.toInt().coerceAtMost(100)
+            progressBar.setIndicatorColor(color)
+
+            // UPDATED: Use persisted locale for this check
             val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
-            view.findViewById<TextView>(R.id.tvSpent).text = "Spent: ${format.format(currentExpense * activeCurrencyRate)}"
-            view.findViewById<TextView>(R.id.tvLimit).text = "Limit: ${format.format(monthlyBudget * activeCurrencyRate)}"
-            val pb = view.findViewById<LinearProgressIndicator>(R.id.progressBarBudget)
-            pb.progress = percentage.toInt().coerceAtMost(100)
-            pb.setIndicatorColor(if (percentage >= 100) Color.parseColor("#D32F2F") else Color.parseColor("#FF9800"))
-            view.findViewById<Button>(R.id.btnIgnore).setOnClickListener { dialog.dismiss() }
-            view.findViewById<Button>(R.id.btnFixBudget).setOnClickListener { dialog.dismiss(); showSetBudgetDialog() }
+            tvSpent.text = "Spent: ${format.format(currentExpense * activeCurrencyRate)}"
+            tvSpent.setTextColor(color)
+            tvLimit.text = "Limit: ${format.format(monthlyBudget * activeCurrencyRate)}"
+
+            if (isCritical) {
+                btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
+            } else {
+                btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
+            }
+
+            applySquishPhysics(btnIgnore) { dialog.dismiss() }
+            applySquishPhysics(btnFixBudget) {
+                dialog.dismiss()
+                showSetBudgetDialog()
+            }
             dialog.show()
         }
     }
 
     private fun showDateFilterDialog() {
-        val view = LayoutInflater.from(this).inflate(R.layout.dialog_date_filter, null)
-        val dialog = AlertDialog.Builder(this).setView(view).create()
-        val rg = view.findViewById<RadioGroup>(R.id.radioGroupDateFilter)
-        view.findViewById<Button>(R.id.btnApplyDateFilter).setOnClickListener {
-            val cal = Calendar.getInstance()
-            when (rg.checkedRadioButtonId) {
-                R.id.radioAllTime -> { expenseViewModel.clearDateFilter(); tvDateHeader.text = "Showing: All Time" }
-                R.id.radioToday -> { cal.set(Calendar.HOUR_OF_DAY, 0); expenseViewModel.setDateRangeFilter(cal.timeInMillis, System.currentTimeMillis()); tvDateHeader.text = "Showing: Today" }
-                R.id.radioThisWeek -> { cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY); expenseViewModel.setDateRangeFilter(cal.timeInMillis, System.currentTimeMillis()); tvDateHeader.text = "Showing: This Week" }
-                R.id.radioThisMonth -> { cal.set(Calendar.DAY_OF_MONTH, 1); expenseViewModel.setDateRangeFilter(cal.timeInMillis, System.currentTimeMillis()); tvDateHeader.text = "Showing: This Month" }
-                R.id.radioLastMonth -> { cal.add(Calendar.MONTH, -1); cal.set(Calendar.DAY_OF_MONTH, 1); val s = cal.timeInMillis; cal.set(Calendar.DAY_OF_MONTH, cal.getActualMaximum(Calendar.DAY_OF_MONTH)); expenseViewModel.setDateRangeFilter(s, cal.timeInMillis); tvDateHeader.text = "Showing: Last Month" }
-                R.id.radioCustom -> { dialog.dismiss(); showCustomDateRangePicker(); return@setOnClickListener }
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_date_filter, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
+        val radioGroup = dialogView.findViewById<RadioGroup>(R.id.radioGroupDateFilter)
+
+        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnApplyDateFilter)) {
+            val calendar = Calendar.getInstance()
+            val dateFormat = SimpleDateFormat("dd MMM", Locale.getDefault())
+
+            when (radioGroup.checkedRadioButtonId) {
+                R.id.radioAllTime -> {
+                    expenseViewModel.clearDateFilter()
+                    findViewById<Button>(R.id.btnDateFilter).text = "All Time"
+                    tvDateHeader.text = "Showing: All Time"
+                }
+                R.id.radioToday -> {
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                    val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "Today"
+                    tvDateHeader.text = "Showing: Today (${dateFormat.format(Date())})"
+                }
+                R.id.radioThisWeek -> {
+                    calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                    val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "This Week"
+                    tvDateHeader.text = "Showing: This Week (Mon - Today)"
+                }
+                R.id.radioThisMonth -> {
+                    calendar.set(Calendar.DAY_OF_MONTH, 1)
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                    val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "This Month"
+                    tvDateHeader.text = "Showing: This Month"
+                }
+                R.id.radioLastMonth -> {
+                    calendar.set(Calendar.DAY_OF_MONTH, 1)
+                    calendar.add(Calendar.MONTH, -1)
+                    val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+
+                    calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
+                    val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+
+                    expenseViewModel.setDateRangeFilter(start, end)
+                    findViewById<Button>(R.id.btnDateFilter).text = "Last Month"
+                    tvDateHeader.text = "Showing: Last Month"
+                }
+                R.id.radioCustom -> {
+                    dialog.dismiss()
+                    showCustomDateRangePicker()
+                    return@applySquishPhysics
+                }
             }
             dialog.dismiss()
         }
-        view.findViewById<Button>(R.id.btnCancelDateFilter).setOnClickListener { dialog.dismiss() }
+        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnCancelDateFilter)) { dialog.dismiss() }
         dialog.show()
     }
 
     private fun showCustomDateRangePicker() {
-        val cal = Calendar.getInstance()
+        val calendar = Calendar.getInstance()
         DatePickerDialog(this, { _, y, m, d ->
-            val s = Calendar.getInstance().apply { set(y, m, d, 0, 0) }.timeInMillis
+            val startSelected = Calendar.getInstance().apply { set(y, m, d, 0, 0, 0) }.timeInMillis
+
             DatePickerDialog(this, { _, y2, m2, d2 ->
-                val e = Calendar.getInstance().apply { set(y2, m2, d2, 23, 59) }.timeInMillis
-                expenseViewModel.setDateRangeFilter(min(s, e), max(s, e)); tvDateHeader.text = "Custom Range"
+                val endSelected = Calendar.getInstance().apply { set(y2, m2, d2, 23, 59, 59) }.timeInMillis
+
+                val finalStart = min(startSelected, endSelected)
+                val finalEnd = max(startSelected, endSelected)
+
+                expenseViewModel.setDateRangeFilter(finalStart, finalEnd)
+                findViewById<Button>(R.id.btnDateFilter).text = "Custom"
+
+                val sdf = SimpleDateFormat("dd MMM", Locale.getDefault())
+                tvDateHeader.text = "Showing: ${sdf.format(Date(finalStart))} - ${sdf.format(Date(finalEnd))}"
+
             }, y, m, d).show()
-        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    private fun updateThemeButtonText(b: Button) { b.text = if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES) "☀️ Light Mode" else "🌙 Dark Mode" }
-    private fun loadSavedTheme() { AppCompatDelegate.setDefaultNightMode(getSharedPreferences("ExpenseTracker", MODE_PRIVATE).getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)) }
+    private fun updateThemeButtonText(button: Button) {
+        button.text = if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES) "☀️ Light Mode" else "🌙 Dark Mode"
+    }
+
+    private fun loadSavedTheme(sharedPref: android.content.SharedPreferences) {
+        AppCompatDelegate.setDefaultNightMode(sharedPref.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM))
+    }
 }
