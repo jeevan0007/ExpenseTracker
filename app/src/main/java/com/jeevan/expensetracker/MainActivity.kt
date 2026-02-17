@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -46,7 +48,9 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
 import com.jeevan.expensetracker.data.Expense
+import com.jeevan.expensetracker.utils.ShakeDetector
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
+import com.jeevan.expensetracker.worker.BudgetWorker
 import com.jeevan.expensetracker.worker.RecurringExpenseWorker
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -82,6 +86,10 @@ class MainActivity : AppCompatActivity() {
     private var activeCurrencyLocale = Locale("en", "IN")
     private var isTravelModeActive = false
 
+    // --- SENSOR (SHAKE) ---
+    private lateinit var sensorManager: SensorManager
+    private var shakeDetector: ShakeDetector? = null
+
     // Session Tracker
     companion object {
         var isSessionUnlocked = false
@@ -94,12 +102,19 @@ class MainActivity : AppCompatActivity() {
         // 1. LOAD SAVED THEME & CURRENCY IMMEDIATELY
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         loadSavedTheme(sharedPref)
-        loadSavedCurrency(sharedPref) // <--- CRITICAL FIX
+        loadSavedCurrency(sharedPref)
 
         monthlyBudget = sharedPref.getFloat("monthly_budget", 0f).toDouble()
 
         tvDateHeader = findViewById(R.id.tvDateHeader)
         lottieAnimationView = findViewById(R.id.lottieAnimationView)
+
+        // --- SHAKE DETECTOR SETUP ---
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        shakeDetector = ShakeDetector {
+            // WHAT HAPPENS WHEN YOU SHAKE:
+            resetToDefaults()
+        }
 
         // --- BIOMETRIC LOCK ---
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
@@ -114,9 +129,12 @@ class MainActivity : AppCompatActivity() {
         }
         btnUnlockScreen.setOnClickListener { launchBiometricLock(lockedOverlay) }
 
-        // --- WORK MANAGER ---
+        // --- WORK MANAGER (Recurring & Budget) ---
         val workRequest = PeriodicWorkRequestBuilder<RecurringExpenseWorker>(24, TimeUnit.HOURS).build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("RecurringExpenseWork", ExistingPeriodicWorkPolicy.KEEP, workRequest)
+
+        val budgetRequest = androidx.work.PeriodicWorkRequestBuilder<BudgetWorker>(12, TimeUnit.HOURS).build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork("BudgetWatchdog", androidx.work.ExistingPeriodicWorkPolicy.KEEP, budgetRequest)
 
         // --- VIEW MODEL ---
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
@@ -208,7 +226,6 @@ class MainActivity : AppCompatActivity() {
 
         // --- v2.0 TRAVEL MODE: FAB LISTENER ---
         val fabTravelMode = findViewById<FloatingActionButton>(R.id.fabTravelMode)
-        // Set initial color based on loaded state
         val initialColor = if (isTravelModeActive) "#4CAF50" else "#FF9800"
         fabTravelMode.backgroundTintList = ColorStateList.valueOf(Color.parseColor(initialColor))
 
@@ -242,7 +259,6 @@ class MainActivity : AppCompatActivity() {
 
         applySquishPhysics(findViewById<Button>(R.id.btnViewCharts)) {
             val intent = Intent(this, ChartsActivity::class.java)
-            // No extras needed anymore, ChartsActivity reads Prefs
             startActivity(intent)
             overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
         }
@@ -261,6 +277,44 @@ class MainActivity : AppCompatActivity() {
         headerCard.animate().translationY(0f).alpha(1f).setDuration(800).setInterpolator(OvershootInterpolator(1.2f)).start()
 
         checkAndRequestPermissions()
+    }
+
+    // --- LIFECYCLE FOR SENSORS ---
+    override fun onResume() {
+        super.onResume()
+        shakeDetector?.let {
+            sensorManager.registerListener(it, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_UI)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        shakeDetector?.let {
+            sensorManager.unregisterListener(it)
+        }
+    }
+
+    // --- SHAKE TO RESET LOGIC ---
+    private fun resetToDefaults() {
+        // --- UPDATED: Strong Double-Buzz for Shake ---
+        vibrateReset()
+        Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
+
+        // 2. Reset Currency to INR
+        setCurrency(1.0, Locale("en", "IN"), false)
+
+        // 3. Clear Search & Filters
+        expenseViewModel.setSearchQuery("")
+        expenseViewModel.clearDateFilter()
+        findViewById<EditText>(R.id.etSearch).setText("")
+
+        // 4. Update Header
+        tvDateHeader.text = "Showing: All Time"
+
+        // 5. Reset Theme to System
+        getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().remove("theme_mode").apply()
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        updateThemeButtonText(findViewById(R.id.btnToggleTheme))
     }
 
     // --- SAVE & LOAD CURRENCY PREFS ---
@@ -297,18 +351,23 @@ class MainActivity : AppCompatActivity() {
         builder.setTitle("Select Travel Currency")
         builder.setItems(currencies) { _, which ->
             when (which) {
-                0 -> setCurrency(1.0, Locale("en", "IN"), false) // INR
-                1 -> setCurrency(0.011, Locale.US, true)         // USD (Today's Rate)
-                2 -> setCurrency(0.0093, Locale.GERMANY, true)   // EUR
-                3 -> setCurrency(0.0081, Locale.UK, true)        // GBP
-                4 -> setCurrency(1.69, Locale.JAPAN, true)       // JPY
-                5 -> setCurrency(0.076, Locale.CHINA, true)      // CNY
+                0 -> setCurrency(1.0, Locale("en", "IN"), false)
+                1 -> setCurrency(0.011, Locale.US, true)
+                2 -> setCurrency(0.0093, Locale.GERMANY, true)
+                3 -> setCurrency(0.0081, Locale.UK, true)
+                4 -> setCurrency(1.69, Locale.JAPAN, true)
+                5 -> setCurrency(0.076, Locale.CHINA, true)
             }
 
-            val color = if (isTravelModeActive) "#4CAF50" else "#FF9800"
-            fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor(color))
+            if (isTravelModeActive) {
+                fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#4CAF50"))
+            } else {
+                fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF9800"))
+            }
         }
-        builder.show()
+        val dialog = builder.create()
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+        dialog.show()
     }
 
     private fun setCurrency(rate: Double, locale: Locale, isTravel: Boolean) {
@@ -316,15 +375,16 @@ class MainActivity : AppCompatActivity() {
         activeCurrencyLocale = locale
         isTravelModeActive = isTravel
 
-        // Save to Disk Immediately
         saveCurrencyPrefs(rate, locale)
 
-        // Update UI
         adapter.updateCurrency(rate, locale)
         updateHeaderCurrency()
 
-        val msg = if (isTravel) "Currency: ${locale.displayCountry}" else "Currency: INR (Home)"
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        // Only show toast if triggered manually (not by reset)
+        if (isTravel) {
+            val msg = "Currency: ${locale.displayCountry}"
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun updateHeaderCurrency() {
@@ -482,11 +542,9 @@ class MainActivity : AppCompatActivity() {
         animator.duration = 1500
         animator.interpolator = DecelerateInterpolator(1.5f)
 
-        // UPDATED: Use the ACTIVE currency locale, not hardcoded IN
         val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
 
         animator.addUpdateListener { animation ->
-            // Use activeCurrencyRate for multiplication
             val displayValue = (animation.animatedValue as Float) * activeCurrencyRate.toFloat()
             textView.text = format.format(displayValue)
         }
@@ -503,7 +561,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBalance(tvBalance: TextView) {
         val newBalance = currentIncome - currentExpense
-        // If Travel Mode is on, just update text directly to avoid jumping symbols
         if (isTravelModeActive) {
             updateHeaderCurrency()
         } else {
@@ -559,6 +616,21 @@ class MainActivity : AppCompatActivity() {
                 vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
             } else {
                 @Suppress("DEPRECATION") vibrator.vibrate(50)
+            }
+        }
+    }
+
+    // --- NEW: HEAVY VIBRATION FOR SHAKE ---
+    private fun vibrateReset() {
+        val v = getVibrator()
+        if (v.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Double Heavy Click: Buzz (70ms) - Pause (50ms) - Buzz (70ms)
+                val timing = longArrayOf(0, 70, 50, 70)
+                v.vibrate(VibrationEffect.createWaveform(timing, -1))
+            } else {
+                @Suppress("DEPRECATION")
+                v.vibrate(300)
             }
         }
     }
@@ -633,57 +705,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAddExpenseDialog() {
-        val view = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
-        val dialog = AlertDialog.Builder(this).setView(view).create()
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
         dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
-        val radioGroupType = view.findViewById<RadioGroup>(R.id.radioGroupType)
-        val etAmount = view.findViewById<TextInputEditText>(R.id.etAmount)
-        val etDescription = view.findViewById<TextInputEditText>(R.id.etDescription)
-        val spinnerCategory = view.findViewById<Spinner>(R.id.spinnerCategory)
-        val cbRecurring = view.findViewById<CheckBox>(R.id.cbRecurring)
-        val btnSave = view.findViewById<Button>(R.id.btnSave)
-        val btnCancel = view.findViewById<Button>(R.id.btnCancel)
+        val radioGroupType = dialogView.findViewById<RadioGroup>(R.id.radioGroupType)
+        val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
+        val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
+        val spinnerCategory = dialogView.findViewById<Spinner>(R.id.spinnerCategory)
+        val cbRecurring = dialogView.findViewById<CheckBox>(R.id.cbRecurring)
+        val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
+        val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
 
-        // Setup Category Spinner
         val categories = resources.getStringArray(R.array.categories).toMutableList()
         categories.add("Salary"); categories.add("Automated")
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
 
-        // Update Hint with Current Currency Symbol
+        // Dynamic Hint
         val symbol = java.util.Currency.getInstance(activeCurrencyLocale).symbol
         etAmount.hint = "Amount ($symbol)"
 
         applySquishPhysics(btnSave) {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
+            val category = spinnerCategory.selectedItem.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
-            val rawInput = amountText.toDoubleOrNull()
 
+            val rawInput = amountText.toDoubleOrNull()
             if (rawInput == null || rawInput <= 0 || description.isEmpty()) {
                 Toast.makeText(this, "Please enter valid details", Toast.LENGTH_SHORT).show()
                 return@applySquishPhysics
             }
 
-            // --- REVERSE CURRENCY LOGIC ---
-            // If in Travel Mode, convert the input back to INR before saving
+            expenseBeforeAdd = currentExpense
+
+            // REVERSE MATH LOGIC (Fixing the $1 = ₹1 bug)
             val amountInInr = if (isTravelModeActive) {
                 rawInput / activeCurrencyRate
             } else {
                 rawInput
             }
 
-            expenseBeforeAdd = currentExpense
-
-            expenseViewModel.insert(Expense(
-                amount = amountInInr,
-                category = spinnerCategory.selectedItem.toString(),
-                description = description,
-                type = type,
-                isRecurring = cbRecurring.isChecked
-            ))
+            expenseViewModel.insert(Expense(amount = amountInInr, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
             dialog.dismiss()
 
             if (type == "Expense") {
@@ -697,7 +762,6 @@ class MainActivity : AppCompatActivity() {
     private fun showDeleteDialog(expense: Expense) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_confirm_delete, null)
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
-
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
@@ -707,17 +771,13 @@ class MainActivity : AppCompatActivity() {
 
         tvDeleteMessage.text = "Delete \"${expense.description}\"?"
 
-        applySquishPhysics(btnCancel) {
-            dialog.dismiss()
-        }
-
+        applySquishPhysics(btnCancel) { dialog.dismiss() }
         applySquishPhysics(btnConfirm) {
             vibratePhone()
             expenseViewModel.delete(expense)
             dialog.dismiss()
             Toast.makeText(this, "Transaction Deleted", Toast.LENGTH_SHORT).show()
         }
-
         dialog.show()
     }
 
@@ -815,13 +875,11 @@ class MainActivity : AppCompatActivity() {
 
             tvAlertIcon.text = if (isCritical) "🚨" else "⚠️"
             tvAlertTitle.text = if (isCritical) "Budget Exceeded!" else "Budget Warning"
-
             tvAlertMessage.text = "You have used ${String.format("%.1f", percentage)}% of your monthly limit."
 
             progressBar.progress = percentage.toInt().coerceAtMost(100)
             progressBar.setIndicatorColor(color)
 
-            // UPDATED: Use persisted locale for this check
             val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
             tvSpent.text = "Spent: ${format.format(currentExpense * activeCurrencyRate)}"
             tvSpent.setTextColor(color)

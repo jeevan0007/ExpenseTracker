@@ -6,6 +6,10 @@ import androidx.room.*
 @Dao
 interface ExpenseDao {
 
+    // Add this inside the interface ExpenseDao
+    @Query("SELECT * FROM expense_table")
+    fun getAllExpensesSync(): List<Expense>
+
     @Query("SELECT * FROM expense_table ORDER BY date DESC")
     fun getAllExpenses(): LiveData<List<Expense>>
 
