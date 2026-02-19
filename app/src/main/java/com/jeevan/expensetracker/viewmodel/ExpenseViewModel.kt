@@ -75,6 +75,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         applyFilters(allExpenses.value)
     }
 
+    // Function to get raw list of expenses for exporting
+    fun getAllExpensesForExport(): List<Expense>? {
+        return allExpenses.value
+    }
+
     private fun applyFilters(expenses: List<Expense>?) {
         // FIX: If the list is null, do nothing.
         if (expenses == null) return

@@ -234,6 +234,13 @@ class MainActivity : AppCompatActivity() {
             showCurrencyDialog(fabTravelMode)
         }
 
+        // --- NEW: EXPORT TO CSV BUTTON ---
+        val fabExport = findViewById<FloatingActionButton>(R.id.fabExport)
+        fabExport.setOnClickListener {
+            vibratePhone()
+            exportDataToCSV()
+        }
+
         // --- BUTTONS ---
         val fabAddExpense = findViewById<FloatingActionButton>(R.id.fabAddExpense)
         fabAddExpense.setOnTouchListener { v, event ->
@@ -992,5 +999,101 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSavedTheme(sharedPref: android.content.SharedPreferences) {
         AppCompatDelegate.setDefaultNightMode(sharedPref.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM))
+    }
+
+    // --- PRO-LEVEL EXPORT TO CSV LOGIC ---
+    private fun exportDataToCSV() {
+        val expenses = expenseViewModel.filteredExpenses.value
+
+        if (expenses.isNullOrEmpty()) {
+            Toast.makeText(this, "No data to export", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            val fileName = "ExpenseReport_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.csv"
+            val file = java.io.File(cacheDir, fileName)
+            val fileWriter = java.io.FileWriter(file)
+
+            // 1. Sort expenses chronologically (Newest to Oldest)
+            val sortedExpenses = expenses.sortedByDescending { it.date }
+
+            // 2. Group the data by "Month Year" (e.g., "February 2026")
+            val groupedExpenses = sortedExpenses.groupBy {
+                SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date(it.date))
+            }
+
+            var grandTotalIncome = 0.0
+            var grandTotalExpense = 0.0
+
+            // Main Header
+            fileWriter.append("PROFESSIONAL EXPENSE LEDGER\n")
+            fileWriter.append("Generated on: ${SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date())}\n\n")
+
+            // 3. Iterate through each month
+            val rowDateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+
+            for ((monthYear, monthExpenses) in groupedExpenses) {
+                // Month Header
+                fileWriter.append("=== $monthYear ===\n")
+                fileWriter.append("Date,Description,Category,Type,Amount(INR)\n")
+
+                var monthlyIncome = 0.0
+                var monthlyExpense = 0.0
+
+                // Write rows for this month
+                for (expense in monthExpenses) {
+                    val dateStr = rowDateFormat.format(Date(expense.date))
+                    val formattedAmount = String.format(Locale.US, "%.2f", expense.amount)
+
+                    if (expense.type == "Income") {
+                        monthlyIncome += expense.amount
+                        grandTotalIncome += expense.amount
+                    } else {
+                        monthlyExpense += expense.amount
+                        grandTotalExpense += expense.amount
+                    }
+
+                    fileWriter.append("\"$dateStr\",\"${expense.description}\",\"${expense.category}\",\"${expense.type}\",$formattedAmount\n")
+                }
+
+                // 4. Monthly Sub-Totals (Aligned under Type and Amount columns)
+                val netSavings = monthlyIncome - monthlyExpense
+                fileWriter.append(",,,,\n") // Empty spacing row
+                fileWriter.append(",,,\"Total Income\",${String.format(Locale.US, "%.2f", monthlyIncome)}\n")
+                fileWriter.append(",,,\"Total Expense\",${String.format(Locale.US, "%.2f", monthlyExpense)}\n")
+                fileWriter.append(",,,\"Net Savings\",${String.format(Locale.US, "%.2f", netSavings)}\n")
+                fileWriter.append("\n\n") // Blank lines before the next month
+            }
+
+            // 5. Grand Totals at the very bottom
+            fileWriter.append("=== GRAND TOTALS ===\n")
+            fileWriter.append(",,,\"Overall Income\",${String.format(Locale.US, "%.2f", grandTotalIncome)}\n")
+            fileWriter.append(",,,\"Overall Expense\",${String.format(Locale.US, "%.2f", grandTotalExpense)}\n")
+            fileWriter.append(",,,\"Overall Balance\",${String.format(Locale.US, "%.2f", grandTotalIncome - grandTotalExpense)}\n")
+
+            fileWriter.flush()
+            fileWriter.close()
+
+            // Trigger Share Intent
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "${applicationContext.packageName}.provider",
+                file
+            )
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "Professional Expense Report")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            startActivity(Intent.createChooser(shareIntent, "Save or Share Pro Report"))
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 }
