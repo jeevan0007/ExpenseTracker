@@ -74,6 +74,9 @@ class MainActivity : AppCompatActivity() {
     private var oldIncomeAnimState: Double = 0.0
     private var oldExpenseAnimState: Double = 0.0
 
+    // Premium FAB State
+    private var isFabExpanded = false
+
     // Smart Budget Checker
     private var shouldCheckBudget: Boolean = false
     private var expenseBeforeAdd: Double = 0.0
@@ -112,7 +115,6 @@ class MainActivity : AppCompatActivity() {
         // --- SHAKE DETECTOR SETUP ---
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         shakeDetector = ShakeDetector {
-            // WHAT HAPPENS WHEN YOU SHAKE:
             resetToDefaults()
         }
 
@@ -194,9 +196,36 @@ class MainActivity : AppCompatActivity() {
         val tvBalanceAmount = findViewById<TextView>(R.id.tvBalanceAmount)
         val tvIncomeAmount = findViewById<TextView>(R.id.tvIncomeAmount)
         val tvExpenseAmount = findViewById<TextView>(R.id.tvExpenseAmount)
+        val layoutEmptyState = findViewById<LinearLayout>(R.id.layoutEmptyState)
+        val rvExpenses = findViewById<RecyclerView>(R.id.rvExpenses)
+        val appBarLayout = findViewById<com.google.android.material.appbar.AppBarLayout>(R.id.appBarLayout)
+        val appBarContent = findViewById<View>(R.id.appBarContent)
 
         expenseViewModel.filteredExpenses.observe(this) { expenses ->
-            expenses?.let { adapter.setExpenses(it) }
+            val params = appBarContent.layoutParams as com.google.android.material.appbar.AppBarLayout.LayoutParams
+
+            if (expenses.isNullOrEmpty()) {
+                // 1. Force Header Down & Lock It
+                appBarLayout.setExpanded(true, true)
+                params.scrollFlags = 0 // Disable scrolling completely
+                appBarContent.layoutParams = params
+
+                // 2. Show Empty State
+                rvExpenses.visibility = View.GONE
+                layoutEmptyState.visibility = View.VISIBLE
+                layoutEmptyState.alpha = 0f
+                layoutEmptyState.animate().alpha(1f).setDuration(400).start()
+                adapter.setExpenses(emptyList())
+            } else {
+                // 1. Unlock Header Scrolling
+                params.scrollFlags = com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_ENTER_ALWAYS
+                appBarContent.layoutParams = params
+
+                // 2. Show List
+                rvExpenses.visibility = View.VISIBLE
+                layoutEmptyState.visibility = View.GONE
+                adapter.setExpenses(expenses)
+            }
         }
 
         expenseViewModel.totalIncome.observe(this) { income ->
@@ -224,24 +253,27 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        // --- v2.0 TRAVEL MODE: FAB LISTENER ---
+        // --- PREMIUM FAB SETUP ---
+        setupPremiumFab()
+
+        // --- SUB-FAB ACTIONS ---
         val fabTravelMode = findViewById<FloatingActionButton>(R.id.fabTravelMode)
         val initialColor = if (isTravelModeActive) "#4CAF50" else "#FF9800"
         fabTravelMode.backgroundTintList = ColorStateList.valueOf(Color.parseColor(initialColor))
 
         fabTravelMode.setOnClickListener {
+            closeFabMenu()
             vibratePhone()
             showCurrencyDialog(fabTravelMode)
         }
 
-        // --- NEW: EXPORT TO CSV BUTTON ---
         val fabExport = findViewById<FloatingActionButton>(R.id.fabExport)
         fabExport.setOnClickListener {
+            closeFabMenu()
             vibratePhone()
             exportDataToCSV()
         }
 
-        // --- BUTTONS ---
         val fabAddExpense = findViewById<FloatingActionButton>(R.id.fabAddExpense)
         fabAddExpense.setOnTouchListener { v, event ->
             when (event.action) {
@@ -252,6 +284,7 @@ class MainActivity : AppCompatActivity() {
                 MotionEvent.ACTION_UP -> {
                     vibratePhone()
                     v.animate().scaleX(1f).scaleY(1f).setDuration(400).setInterpolator(OvershootInterpolator(2.5f)).start()
+                    closeFabMenu()
                     showAddExpenseDialog()
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -261,6 +294,7 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
+        // --- HEADER BUTTONS ---
         applySquishPhysics(findViewById<Button>(R.id.btnSetBudget)) { showSetBudgetDialog() }
         applySquishPhysics(findViewById<Button>(R.id.btnDateFilter)) { showDateFilterDialog() }
 
@@ -286,6 +320,69 @@ class MainActivity : AppCompatActivity() {
         checkAndRequestPermissions()
     }
 
+    // --- PREMIUM FAB MENU ANIMATIONS ---
+    private fun setupPremiumFab() {
+        val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
+        val dimOverlay = findViewById<View>(R.id.fabDimOverlay)
+        val layoutAdd = findViewById<View>(R.id.layoutFabAdd)
+        val layoutTravel = findViewById<View>(R.id.layoutFabTravel)
+        val layoutExport = findViewById<View>(R.id.layoutFabExport)
+
+        fabMain.setOnClickListener {
+            isFabExpanded = !isFabExpanded
+            vibratePhoneLight()
+            if (isFabExpanded) {
+                dimOverlay.visibility = View.VISIBLE
+                dimOverlay.animate().alpha(1f).setDuration(200).start()
+
+                fabMain.animate().rotation(135f).setDuration(250).start()
+
+                val layouts = listOf(layoutAdd, layoutTravel, layoutExport)
+                layouts.forEachIndexed { index, layout ->
+                    layout.translationY = 50f
+                    layout.alpha = 0f
+                    layout.visibility = View.VISIBLE
+                    layout.animate()
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setStartDelay((index * 40).toLong())
+                        .setDuration(200)
+                        .start()
+                }
+            } else {
+                closeFabMenu()
+            }
+        }
+
+        dimOverlay.setOnClickListener { closeFabMenu() }
+    }
+
+    private fun closeFabMenu() {
+        if (!isFabExpanded) return
+        isFabExpanded = false
+
+        val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
+        val dimOverlay = findViewById<View>(R.id.fabDimOverlay)
+
+        fabMain.animate().rotation(0f).setDuration(250).start()
+
+        dimOverlay.animate().alpha(0f).setDuration(200).withEndAction {
+            dimOverlay.visibility = View.GONE
+        }.start()
+
+        val layouts = listOf(R.id.layoutFabAdd, R.id.layoutFabTravel, R.id.layoutFabExport)
+        layouts.forEach { id ->
+            val layout = findViewById<View>(id)
+            layout.animate()
+                .translationY(50f)
+                .alpha(0f)
+                .setStartDelay(0)
+                .setDuration(150)
+                .withEndAction { layout.visibility = View.GONE }
+                .start()
+        }
+    }
+
     // --- LIFECYCLE FOR SENSORS ---
     override fun onResume() {
         super.onResume()
@@ -303,23 +400,13 @@ class MainActivity : AppCompatActivity() {
 
     // --- SHAKE TO RESET LOGIC ---
     private fun resetToDefaults() {
-        // --- UPDATED: Strong Double-Buzz for Shake ---
         vibrateReset()
         Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
-
-        // 1. Reset Currency to INR
         setCurrency(1.0, Locale("en", "IN"), false)
-
-        // 2. Clear Search & Filters
         expenseViewModel.setSearchQuery("")
         expenseViewModel.clearDateFilter()
         findViewById<EditText>(R.id.etSearch).setText("")
-
-        // 3. Update Header
         tvDateHeader.text = "Showing: All Time"
-
-        // NOTE: We completely removed the "Reset Theme to System" logic here!
-        // Your dark/light mode preference will now survive the shake.
     }
 
     // --- SAVE & LOAD CURRENCY PREFS ---
@@ -385,7 +472,6 @@ class MainActivity : AppCompatActivity() {
         adapter.updateCurrency(rate, locale)
         updateHeaderCurrency()
 
-        // Only show toast if triggered manually (not by reset)
         if (isTravel) {
             val msg = "Currency: ${locale.displayCountry}"
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
@@ -625,12 +711,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- NEW: HEAVY VIBRATION FOR SHAKE ---
     private fun vibrateReset() {
         val v = getVibrator()
         if (v.hasVibrator()) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Double Heavy Click: Buzz (70ms) - Pause (50ms) - Buzz (70ms)
                 val timing = longArrayOf(0, 70, 50, 70)
                 v.vibrate(VibrationEffect.createWaveform(timing, -1))
             } else {
@@ -728,7 +812,6 @@ class MainActivity : AppCompatActivity() {
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
 
-        // Dynamic Hint
         val symbol = java.util.Currency.getInstance(activeCurrencyLocale).symbol
         etAmount.hint = "Amount ($symbol)"
 
@@ -746,14 +829,18 @@ class MainActivity : AppCompatActivity() {
 
             expenseBeforeAdd = currentExpense
 
-            // REVERSE MATH LOGIC (Fixing the $1 = ₹1 bug)
             val amountInInr = if (isTravelModeActive) {
                 rawInput / activeCurrencyRate
             } else {
                 rawInput
             }
 
+            // 1. Insert into DB
             expenseViewModel.insert(Expense(amount = amountInInr, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
+
+            // 2. TRIGGER THE HEARTBEAT PULSE!
+            triggerBalancePulse(type == "Income")
+
             dialog.dismiss()
 
             if (type == "Expense") {
@@ -1013,10 +1100,8 @@ class MainActivity : AppCompatActivity() {
             val file = java.io.File(cacheDir, fileName)
             val fileWriter = java.io.FileWriter(file)
 
-            // 1. Sort expenses chronologically (Newest to Oldest)
             val sortedExpenses = expenses.sortedByDescending { it.date }
 
-            // 2. Group the data by "Month Year" (e.g., "February 2026")
             val groupedExpenses = sortedExpenses.groupBy {
                 SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date(it.date))
             }
@@ -1024,22 +1109,18 @@ class MainActivity : AppCompatActivity() {
             var grandTotalIncome = 0.0
             var grandTotalExpense = 0.0
 
-            // Main Header
             fileWriter.append("PROFESSIONAL EXPENSE LEDGER\n")
             fileWriter.append("Generated on: ${SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date())}\n\n")
 
-            // 3. Iterate through each month
             val rowDateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
 
             for ((monthYear, monthExpenses) in groupedExpenses) {
-                // Month Header
                 fileWriter.append("=== $monthYear ===\n")
                 fileWriter.append("Date,Description,Category,Type,Amount(INR)\n")
 
                 var monthlyIncome = 0.0
                 var monthlyExpense = 0.0
 
-                // Write rows for this month
                 for (expense in monthExpenses) {
                     val dateStr = rowDateFormat.format(Date(expense.date))
                     val formattedAmount = String.format(Locale.US, "%.2f", expense.amount)
@@ -1055,16 +1136,14 @@ class MainActivity : AppCompatActivity() {
                     fileWriter.append("\"$dateStr\",\"${expense.description}\",\"${expense.category}\",\"${expense.type}\",$formattedAmount\n")
                 }
 
-                // 4. Monthly Sub-Totals (Aligned under Type and Amount columns)
                 val netSavings = monthlyIncome - monthlyExpense
-                fileWriter.append(",,,,\n") // Empty spacing row
+                fileWriter.append(",,,,\n")
                 fileWriter.append(",,,\"Total Income\",${String.format(Locale.US, "%.2f", monthlyIncome)}\n")
                 fileWriter.append(",,,\"Total Expense\",${String.format(Locale.US, "%.2f", monthlyExpense)}\n")
                 fileWriter.append(",,,\"Net Savings\",${String.format(Locale.US, "%.2f", netSavings)}\n")
-                fileWriter.append("\n\n") // Blank lines before the next month
+                fileWriter.append("\n\n")
             }
 
-            // 5. Grand Totals at the very bottom
             fileWriter.append("=== GRAND TOTALS ===\n")
             fileWriter.append(",,,\"Overall Income\",${String.format(Locale.US, "%.2f", grandTotalIncome)}\n")
             fileWriter.append(",,,\"Overall Expense\",${String.format(Locale.US, "%.2f", grandTotalExpense)}\n")
@@ -1073,7 +1152,6 @@ class MainActivity : AppCompatActivity() {
             fileWriter.flush()
             fileWriter.close()
 
-            // Trigger Share Intent
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 this,
                 "${applicationContext.packageName}.provider",
@@ -1093,5 +1171,34 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
             Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+    private fun triggerBalancePulse(isIncome: Boolean) {
+        val tvBalance = findViewById<TextView>(R.id.tvBalanceAmount)
+        val originalColor = tvBalance.currentTextColor
+        val pulseColor = if (isIncome) Color.parseColor("#388E3C") else Color.parseColor("#D32F2F")
+
+        // 1. PHYSICAL POP (The Scale)
+        tvBalance.animate()
+            .scaleX(1.2f)
+            .scaleY(1.2f)
+            .setDuration(200)
+            .withEndAction {
+                tvBalance.animate()
+                    .scaleX(1.0f)
+                    .scaleY(1.0f)
+                    .setDuration(500)
+                    .setInterpolator(OvershootInterpolator())
+                    .start()
+            }.start()
+
+        // 2. THE GLOW (The Color Fade)
+        val colorAnimation = ValueAnimator.ofArgb(originalColor, pulseColor, originalColor)
+        colorAnimation.duration = 1000 // Total time for the color to cycle back
+        colorAnimation.addUpdateListener { animator ->
+            tvBalance.setTextColor(animator.animatedValue as Int)
+        }
+        colorAnimation.start()
+
+        vibratePhoneLight()
     }
 }

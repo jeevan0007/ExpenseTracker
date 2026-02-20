@@ -18,6 +18,8 @@
         <item>Entertainment</item>
         <item>Bills</item>
         <item>Healthcare</item>
+        <item>Rent</item>
+        <item>Fuel</item>
         <item>Other</item>
     </string-array>
     <string name="all_categories">All Categories</string>

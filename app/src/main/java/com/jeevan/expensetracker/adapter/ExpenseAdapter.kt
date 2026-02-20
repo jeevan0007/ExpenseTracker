@@ -6,7 +6,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AnimationUtils
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
@@ -45,7 +45,7 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
-        // --- 1. DATA BINDING (Your Original Logic) ---
+        // --- 1. DATA BINDING ---
         val emoji = getCategoryEmoji(currentExpense.category)
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
@@ -57,15 +57,11 @@ class ExpenseAdapter(
         }
 
         // --- NEW CURRENCY MATH ---
-        // Calculate Converted Amount
         val convertedAmount = currentExpense.amount * exchangeRate
-
-        // Format (Automatically adds $, €, ¥, ₹ based on Locale)
         val currencyFormat = NumberFormat.getCurrencyInstance(targetLocale)
         val formattedAmount = currencyFormat.format(convertedAmount)
 
         if (currentExpense.type == "Income") {
-            // Added space for readability "+ $100.00"
             holder.tvAmount.text = "+ $formattedAmount"
             holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
         } else {
@@ -80,10 +76,10 @@ class ExpenseAdapter(
             holder.tvDate.text = "Invalid Date"
         }
 
-        // --- 2. SCROLL ANIMATION (Your Original Logic) ---
-        setAnimation(holder.itemView, position)
+        // --- 2. PREMIUM CASCADE ANIMATION ---
+        setCascadeAnimation(holder.itemView, position)
 
-        // --- 3. PHYSICS + CLICKS + LONG PRESS (Your Original Logic) ---
+        // --- 3. PHYSICS + CLICKS + LONG PRESS ---
         val gestureDetector = GestureDetector(holder.itemView.context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 onItemClick(currentExpense)
@@ -111,11 +107,21 @@ class ExpenseAdapter(
         }
     }
 
-    private fun setAnimation(viewToAnimate: View, position: Int) {
+    // --- BUTTERY CASCADE EFFECT ---
+    private fun setCascadeAnimation(viewToAnimate: View, position: Int) {
         if (position > lastPosition) {
-            val animation = AnimationUtils.loadAnimation(viewToAnimate.context, android.R.anim.slide_in_left)
-            animation.duration = 400
-            viewToAnimate.startAnimation(animation)
+            // Start the view slightly lower and invisible
+            viewToAnimate.translationY = 150f
+            viewToAnimate.alpha = 0f
+
+            // Animate it floating up into place
+            viewToAnimate.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(400)
+                .setInterpolator(DecelerateInterpolator(1.5f))
+                .start()
+
             lastPosition = position
         }
     }
@@ -126,7 +132,7 @@ class ExpenseAdapter(
 
     fun setExpenses(expenses: List<Expense>) {
         this.expenses = expenses
-        this.lastPosition = -1
+        this.lastPosition = -1 // Reset animation tracker when data changes
         notifyDataSetChanged()
     }
 
@@ -136,11 +142,10 @@ class ExpenseAdapter(
 
     override fun getItemCount() = expenses.size
 
-    // --- NEW HELPER: Called by MainActivity to switch currency ---
     fun updateCurrency(rate: Double, locale: Locale) {
         this.exchangeRate = rate
         this.targetLocale = locale
-        notifyDataSetChanged() // Refreshes the list instantly
+        notifyDataSetChanged()
     }
 
     private fun getCategoryEmoji(category: String): String {
@@ -151,6 +156,8 @@ class ExpenseAdapter(
             "Entertainment" -> "🎬"
             "Bills" -> "💡"
             "Healthcare" -> "🏥"
+            "Rent" -> "🏠"
+            "Fuel" -> "⛽"
             "Automated" -> "🤖"
             "Salary" -> "💵"
             "Other" -> "📌"
