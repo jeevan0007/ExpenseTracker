@@ -10,11 +10,13 @@ import com.jeevan.expensetracker.R
 class ChartDetailAdapter(private val items: List<ChartItem>) :
     RecyclerView.Adapter<ChartDetailAdapter.ChartViewHolder>() {
 
-    class ChartViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val tvCategory: TextView = itemView.findViewById(R.id.tvCategory)
-        val tvAmount: TextView = itemView.findViewById(R.id.tvAmount)
-        val tvPercentage: TextView = itemView.findViewById(R.id.tvPercentage)
-        val colorIndicator: View = itemView.findViewById(R.id.viewColorIndicator)
+    class ChartViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        // MATCHED: These IDs now perfectly match your new item_chart_detail.xml
+        val viewColorIndicator: View = view.findViewById(R.id.viewColorIndicator)
+        val tvEmoji: TextView = view.findViewById(R.id.tvEmoji)
+        val tvCategoryName: TextView = view.findViewById(R.id.tvCategoryName)
+        val tvPercentage: TextView = view.findViewById(R.id.tvPercentage)
+        val tvAmount: TextView = view.findViewById(R.id.tvAmount)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChartViewHolder {
@@ -26,15 +28,14 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
     override fun onBindViewHolder(holder: ChartViewHolder, position: Int) {
         val item = items[position]
 
-        // Combine Emoji and Category Name
-        holder.tvCategory.text = "${item.emoji} ${item.category}"
-
-        // Use the pre-formatted string (e.g., "$ 50.00" or "₹ 50.00")
-        holder.tvAmount.text = item.formattedAmount
-
-        holder.tvPercentage.text = "${String.format("%.1f", item.percentage)}%"
-        holder.colorIndicator.setBackgroundColor(item.color)
+        holder.viewColorIndicator.setBackgroundColor(item.color)
+        holder.tvEmoji.text = item.emoji
+        holder.tvCategoryName.text = item.category
+        holder.tvPercentage.text = String.format("%.1f%%", item.percentage)
+        holder.tvAmount.text = item.formattedString
     }
 
-    override fun getItemCount() = items.size
+    override fun getItemCount(): Int {
+        return items.size
+    }
 }
