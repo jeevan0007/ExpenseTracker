@@ -307,21 +307,19 @@ class MainActivity : AppCompatActivity() {
         vibrateReset()
         Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
 
-        // 2. Reset Currency to INR
+        // 1. Reset Currency to INR
         setCurrency(1.0, Locale("en", "IN"), false)
 
-        // 3. Clear Search & Filters
+        // 2. Clear Search & Filters
         expenseViewModel.setSearchQuery("")
         expenseViewModel.clearDateFilter()
         findViewById<EditText>(R.id.etSearch).setText("")
 
-        // 4. Update Header
+        // 3. Update Header
         tvDateHeader.text = "Showing: All Time"
 
-        // 5. Reset Theme to System
-        getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().remove("theme_mode").apply()
-        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
-        updateThemeButtonText(findViewById(R.id.btnToggleTheme))
+        // NOTE: We completely removed the "Reset Theme to System" logic here!
+        // Your dark/light mode preference will now survive the shake.
     }
 
     // --- SAVE & LOAD CURRENCY PREFS ---
