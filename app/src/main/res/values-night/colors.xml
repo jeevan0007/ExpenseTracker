@@ -20,4 +20,10 @@
     <!-- Glassmorphism colors for dark mode -->
     <color name="glass_light">#CC1E1E1E</color>
     <color name="glass_border">#331E1E1E</color>
+    <style name="PremiumDatePickerTheme" parent="ThemeOverlay.Material3.MaterialCalendar">
+        <item name="colorPrimary">#D0BCFF</item>
+        <item name="colorOnPrimary">#381E72</item>
+        <item name="colorPrimaryContainer">#33D0BCFF</item>
+        <item name="colorOnSurface">#D0BCFF</item>
+    </style>
 </resources>
