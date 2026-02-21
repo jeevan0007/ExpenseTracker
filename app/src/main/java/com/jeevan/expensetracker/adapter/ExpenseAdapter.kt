@@ -70,7 +70,8 @@ class ExpenseAdapter(
         }
 
         try {
-            val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+            // Upgraded format: "21 Feb 2026, 07:37 PM"
+            val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             holder.tvDate.text = dateFormat.format(Date(currentExpense.date))
         } catch (e: Exception) {
             holder.tvDate.text = "Invalid Date"

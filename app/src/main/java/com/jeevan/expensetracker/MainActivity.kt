@@ -157,16 +157,100 @@ class MainActivity : AppCompatActivity() {
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
 
-        // --- SWIPE TO DELETE LOGIC ---
-        val swipeHandler = object : SwipeGesture(this) {
+        // --- PREMIUM SWIPE TO DELETE (REVEAL ANIMATION) ---
+        val swipeCallback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
+            override fun onMove(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+                return false
+            }
+
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                vibratePhoneLight()
                 val position = viewHolder.bindingAdapterPosition
                 val expenseToDelete = adapter.getExpenseAt(position)
-                expenseViewModel.delete(expenseToDelete)
-                Toast.makeText(this@MainActivity, "Deleted Transaction", Toast.LENGTH_SHORT).show()
+
+                showDeleteDialog(expenseToDelete, position)
+            }
+
+            // The Buttery Smooth "Reveal" Animation (Fixed Red Background)
+            override fun onChildDraw(
+                c: android.graphics.Canvas,
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                dX: Float,
+                dY: Float,
+                actionState: Int,
+                isCurrentlyActive: Boolean
+            ) {
+                val itemView = viewHolder.itemView
+
+                // Only draw the background and shrink the card IF a swipe is actually happening
+                if (dX != 0f) {
+                    val swipeProgress = Math.min(Math.abs(dX) / itemView.width.toFloat(), 1f)
+
+                    // 1. Z-Axis Depth: Card pushes back
+                    val scale = 1f - (0.05f * swipeProgress)
+                    itemView.scaleX = scale
+                    itemView.scaleY = scale
+
+                    // 2. The Hidden Background: Fade it in/out WITH the swipe so it doesn't stick
+                    val paint = android.graphics.Paint()
+                    paint.color = android.graphics.Color.parseColor("#FF3B30")
+                    paint.isAntiAlias = true
+                    // CRITICAL FIX: Make the red fade away completely when you let go!
+                    paint.alpha = (swipeProgress * 255).toInt().coerceIn(0, 255)
+
+                    // Calculate scaled bounds so the red perfectly hides behind the shrinking card
+                    val scaleOffsetWidth = (itemView.width * (0.05f * swipeProgress)) / 2
+                    val scaleOffsetHeight = (itemView.height * (0.05f * swipeProgress)) / 2
+
+                    val bgRect = android.graphics.RectF(
+                        itemView.left.toFloat() + scaleOffsetWidth,
+                        itemView.top.toFloat() + scaleOffsetHeight,
+                        itemView.right.toFloat() - scaleOffsetWidth,
+                        itemView.bottom.toFloat() - scaleOffsetHeight
+                    )
+                    c.drawRoundRect(bgRect, 40f, 40f, paint)
+
+                    // 3. The Icon Reveal
+                    val icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_delete)
+                    icon?.let {
+                        it.setTint(android.graphics.Color.WHITE)
+
+                        val iconMargin = (itemView.height - it.intrinsicHeight) / 2
+                        val iconTop = itemView.top + iconMargin
+                        val iconBottom = iconTop + it.intrinsicHeight
+
+                        if (dX > 0) { // Swiping Right
+                            val iconLeft = itemView.left + iconMargin
+                            val iconRight = iconLeft + it.intrinsicWidth
+                            it.setBounds(iconLeft, iconTop, iconRight, iconBottom)
+                        } else { // Swiping Left
+                            val iconRight = itemView.right - iconMargin
+                            val iconLeft = iconRight - it.intrinsicWidth
+                            it.setBounds(iconLeft, iconTop, iconRight, iconBottom)
+                        }
+
+                        it.alpha = (swipeProgress * 255).toInt().coerceIn(0, 255)
+                        it.draw(c)
+                    }
+                } else {
+                    // Reset everything perfectly if no swipe is happening
+                    itemView.scaleX = 1f
+                    itemView.scaleY = 1f
+                }
+
+                super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive)
+            }
+
+            // Clean up: Snap the card back to normal scale if they cancel the swipe
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                viewHolder.itemView.scaleX = 1f
+                viewHolder.itemView.scaleY = 1f
             }
         }
-        val itemTouchHelper = ItemTouchHelper(swipeHandler)
+
+        val itemTouchHelper = ItemTouchHelper(swipeCallback)
         itemTouchHelper.attachToRecyclerView(recyclerView)
 
         // --- SEARCH ---
@@ -872,7 +956,8 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun showDeleteDialog(expense: Expense) {
+    // We added an optional 'position' parameter to handle the bounce-back
+    private fun showDeleteDialog(expense: Expense, position: Int? = null) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_confirm_delete, null)
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
@@ -884,7 +969,17 @@ class MainActivity : AppCompatActivity() {
 
         tvDeleteMessage.text = "Delete \"${expense.description}\"?"
 
-        applySquishPhysics(btnCancel) { dialog.dismiss() }
+        // If they click Cancel, bounce the swiped item back!
+        applySquishPhysics(btnCancel) {
+            dialog.dismiss()
+            position?.let { adapter.notifyItemChanged(it) }
+        }
+
+        // If they tap outside the dialog or use the phone's back button, bounce it back!
+        dialog.setOnCancelListener {
+            position?.let { adapter.notifyItemChanged(it) }
+        }
+
         applySquishPhysics(btnConfirm) {
             vibratePhone()
             expenseViewModel.delete(expense)
@@ -1151,7 +1246,7 @@ class MainActivity : AppCompatActivity() {
             fileWriter.append("PROFESSIONAL EXPENSE LEDGER\n")
             fileWriter.append("Generated on: ${SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date())}\n\n")
 
-            val rowDateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+            val rowDateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
 
             for ((monthYear, monthExpenses) in groupedExpenses) {
                 fileWriter.append("=== $monthYear ===\n")
