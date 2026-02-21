@@ -45,6 +45,7 @@ dependencies {
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
     // NEW: WorkManager for background automated tasks
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -30,4 +30,9 @@
         <item name="colorPrimaryContainer">#33673AB7</item>
         <item name="colorOnSurface">#673AB7</item>
     </style>
+    <style name="Theme.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
+        <item name="postSplashScreenTheme">@style/Theme.ExpenseTracker</item>
+    </style>
 </resources>

@@ -20,4 +20,9 @@
         <item name="colorSurface">#1E1E1E</item>
         <item name="colorOnSurface">@color/black</item>
     </style>
+    <style name="Theme.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#121212</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
+        <item name="postSplashScreenTheme">@style/Theme.ExpenseTracker</item>
+    </style>
 </resources>

@@ -1,5 +1,6 @@
 package com.jeevan.expensetracker
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -100,6 +101,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 1. Install the Splash Screen BEFORE super.onCreate!
+        installSplashScreen()
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
