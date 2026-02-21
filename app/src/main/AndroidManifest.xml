@@ -19,6 +19,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ExpenseTracker"
+        android:enableOnBackInvokedCallback="true"
         tools:targetApi="31">
 
         <activity
@@ -58,6 +59,7 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
@@ -67,6 +69,27 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <receiver
+            android:name=".widget.QuickAddWidgetProvider"
+            android:exported="true"
+            android:label="Quick Add Expense">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quick_add_widget_info" />
+        </receiver>
+
+        <activity
+            android:name=".widget.WidgetAddExpenseActivity"
+            android:theme="@style/WidgetDialogTheme"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=".WidgetPopupTask"
+            android:exported="true" />
 
     </application>
 

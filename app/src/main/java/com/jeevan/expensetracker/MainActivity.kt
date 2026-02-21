@@ -751,6 +751,16 @@ class MainActivity : AppCompatActivity() {
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         val isCurrentlyEnabled = sharedPref.getBoolean("app_lock_enabled", false)
 
+        // 1. Check if the phone actually has a lock screen set up!
+        val biometricManager = BiometricManager.from(this)
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+
+        if (!isCurrentlyEnabled && biometricManager.canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
+            Toast.makeText(this, "Please set up a screen lock (PIN/Fingerprint) in your phone settings first.", Toast.LENGTH_LONG).show()
+            return // Stop here, don't try to show the prompt
+        }
+
+        // 2. If safe, show the prompt
         val executor = ContextCompat.getMainExecutor(this)
         val biometricPrompt = BiometricPrompt(this, executor,
             object : BiometricPrompt.AuthenticationCallback() {
@@ -763,11 +773,13 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(applicationContext, "App Lock ${if (newState) "enabled" else "disabled"}!", Toast.LENGTH_SHORT).show()
                 }
             })
+
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(if (isCurrentlyEnabled) "Disable App Lock" else "Enable App Lock")
             .setSubtitle("Authenticate to confirm")
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .setAllowedAuthenticators(authenticators)
             .build()
+
         biometricPrompt.authenticate(promptInfo)
     }
 
