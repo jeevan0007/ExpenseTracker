@@ -24,4 +24,10 @@
         <item name="android:windowBackground">@drawable/rounded_dialog_bg</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+    <style name="PremiumDatePickerTheme" parent="ThemeOverlay.Material3.MaterialCalendar">
+        <item name="colorPrimary">#673AB7</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#33673AB7</item>
+        <item name="colorOnSurface">#673AB7</item>
+    </style>
 </resources>

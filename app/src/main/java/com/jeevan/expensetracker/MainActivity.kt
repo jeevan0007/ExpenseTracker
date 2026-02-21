@@ -47,6 +47,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
+import com.google.android.material.datepicker.MaterialDatePicker
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.utils.ShakeDetector
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
@@ -495,6 +496,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- v2.0 SECRET CAT MODE (SAFE & DISPOSABLE) ---
+    // --- v2.0 SECRET MAKE IT RAIN MODE (SAFE & DISPOSABLE) ---
     private fun triggerSecretCatMode() {
         val rootLayout = window.decorView as ViewGroup
 
@@ -508,16 +510,18 @@ class MainActivity : AppCompatActivity() {
         tempOverlay.isClickable = true
         tempOverlay.isFocusable = true
 
-        val tempCatView = LottieAnimationView(this)
-        val catParams = FrameLayout.LayoutParams(dpToPx(350), dpToPx(350))
-        catParams.gravity = android.view.Gravity.CENTER
-        tempCatView.layoutParams = catParams
-        tempCatView.setAnimation(R.raw.error_cat)
+        val tempAnimationView = LottieAnimationView(this)
+        val animParams = FrameLayout.LayoutParams(dpToPx(350), dpToPx(350))
+        animParams.gravity = android.view.Gravity.CENTER
+        tempAnimationView.layoutParams = animParams
+
+        // CRITICAL FIX: Pointing to the new Make It Rain animation!
+        tempAnimationView.setAnimation(R.raw.make_it_rain)
 
         rootLayout.addView(tempOverlay)
-        rootLayout.addView(tempCatView)
+        rootLayout.addView(tempAnimationView)
 
-        tempCatView.playAnimation()
+        tempAnimationView.playAnimation()
         vibrateGlitchPattern()
 
         val flicker = ValueAnimator.ofFloat(0f, 0.85f, 0.2f, 0.85f, 0.9f)
@@ -527,14 +531,15 @@ class MainActivity : AppCompatActivity() {
         }
         flicker.start()
 
-        tempCatView.addAnimatorListener(object : AnimatorListenerAdapter() {
+        tempAnimationView.addAnimatorListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                tempCatView.animate().alpha(0f).setDuration(400).start()
+                tempAnimationView.animate().alpha(0f).setDuration(400).start()
                 tempOverlay.animate().alpha(0f).setDuration(600).withEndAction {
                     rootLayout.removeView(tempOverlay)
-                    rootLayout.removeView(tempCatView)
+                    rootLayout.removeView(tempAnimationView)
                 }.start()
-                Toast.makeText(this@MainActivity, "G1 says Balance is purr-fect 😼", Toast.LENGTH_SHORT).show()
+                // Updated the Toast message to match the rain!
+                Toast.makeText(this@MainActivity, "G1 says Make it rain! 💸", Toast.LENGTH_SHORT).show()
             }
         })
     }
@@ -1070,24 +1075,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCustomDateRangePicker() {
-        val calendar = Calendar.getInstance()
-        DatePickerDialog(this, { _, y, m, d ->
-            val startSelected = Calendar.getInstance().apply { set(y, m, d, 0, 0, 0) }.timeInMillis
+        // 1. Build the beautiful Material Date Range Picker
+        val datePicker = MaterialDatePicker.Builder.dateRangePicker()
+            .setTitleText("Select Date Range")
+            .setTheme(R.style.PremiumDatePickerTheme)
+            .build()
 
-            DatePickerDialog(this, { _, y2, m2, d2 ->
-                val endSelected = Calendar.getInstance().apply { set(y2, m2, d2, 23, 59, 59) }.timeInMillis
+        // 2. Listen for when they click "Save"
+        datePicker.addOnPositiveButtonClickListener { selection ->
+            // MaterialDatePicker returns the selected dates in UTC milliseconds.
+            // We need to translate those into local time bounds (Start of day -> End of day)
+            val utcStart = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = selection.first }
+            val utcEnd = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = selection.second }
 
-                val finalStart = min(startSelected, endSelected)
-                val finalEnd = max(startSelected, endSelected)
+            val localStart = Calendar.getInstance().apply {
+                set(utcStart.get(Calendar.YEAR), utcStart.get(Calendar.MONTH), utcStart.get(Calendar.DAY_OF_MONTH), 0, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
 
-                expenseViewModel.setDateRangeFilter(finalStart, finalEnd)
-                findViewById<Button>(R.id.btnDateFilter).text = "Custom"
+            val localEnd = Calendar.getInstance().apply {
+                set(utcEnd.get(Calendar.YEAR), utcEnd.get(Calendar.MONTH), utcEnd.get(Calendar.DAY_OF_MONTH), 23, 59, 59)
+                set(Calendar.MILLISECOND, 999)
+            }.timeInMillis
 
-                val sdf = SimpleDateFormat("dd MMM", Locale.getDefault())
-                tvDateHeader.text = "Showing: ${sdf.format(Date(finalStart))} - ${sdf.format(Date(finalEnd))}"
+            // 3. Apply the filter
+            expenseViewModel.setDateRangeFilter(localStart, localEnd)
+            findViewById<Button>(R.id.btnDateFilter).text = "Custom"
 
-            }, y, m, d).show()
-        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
+            // 4. Update the Header UI
+            val sdf = SimpleDateFormat("dd MMM", Locale.getDefault())
+            tvDateHeader.text = "Showing: ${sdf.format(Date(localStart))} - ${sdf.format(Date(localEnd))}"
+
+            vibratePhone()
+        }
+
+        // 3. Show the premium calendar!
+        datePicker.show(supportFragmentManager, "MATERIAL_DATE_RANGE_PICKER")
     }
 
     private fun updateThemeButtonText(button: Button) {
