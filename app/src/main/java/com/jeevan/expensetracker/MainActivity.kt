@@ -981,17 +981,32 @@ class MainActivity : AppCompatActivity() {
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
 
             val rawInput = amountText.toDoubleOrNull()
-            if (rawInput == null || rawInput <= 0 || description.isEmpty()) {
-                Toast.makeText(this, "Please enter valid details", Toast.LENGTH_SHORT).show()
+            var hasError = false
+
+            // Check Amount
+            if (rawInput == null || rawInput <= 0) {
+                shakeErrorView(etAmount)
+                hasError = true
+            }
+            // Check Description
+            if (description.isEmpty()) {
+                shakeErrorView(etDescription)
+                hasError = true
+            }
+
+            // If either failed, trigger the G1 warning and stop saving!
+            if (hasError) {
+                vibratePhone() // Aggressive vibration
+                Toast.makeText(this@MainActivity, "G1 says enter mandatory fields", Toast.LENGTH_SHORT).show()
                 return@applySquishPhysics
             }
 
             expenseBeforeAdd = currentExpense
 
             val amountInInr = if (isTravelModeActive) {
-                rawInput / activeCurrencyRate
+                rawInput!! / activeCurrencyRate
             } else {
-                rawInput
+                rawInput!!
             }
 
             // 1. Securely save the receipt if one was attached
@@ -1113,8 +1128,20 @@ class MainActivity : AppCompatActivity() {
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
 
             val amount = amountText.toDoubleOrNull()
-            if (amount == null || amount <= 0 || description.isEmpty()) {
-                Toast.makeText(this, "Please enter valid details", Toast.LENGTH_SHORT).show()
+            var hasError = false
+
+            if (amount == null || amount <= 0) {
+                shakeErrorView(etAmount)
+                hasError = true
+            }
+            if (description.isEmpty()) {
+                shakeErrorView(etDescription)
+                hasError = true
+            }
+
+            if (hasError) {
+                vibratePhone()
+                Toast.makeText(this@MainActivity, "G1 says enter mandatory fields", Toast.LENGTH_SHORT).show()
                 return@applySquishPhysics
             }
 
@@ -1129,7 +1156,7 @@ class MainActivity : AppCompatActivity() {
 
             expenseViewModel.update(
                 expense.copy(
-                    amount = amount,
+                    amount = amount!!,
                     category = spinnerCategory.selectedItem.toString(),
                     description = description,
                     type = type,
@@ -1473,5 +1500,11 @@ class MainActivity : AppCompatActivity() {
         dialog.setContentView(imageView)
         dialog.window?.attributes?.windowAnimations = android.R.style.Animation_Dialog // Smooth fade
         dialog.show()
+    }
+    private fun shakeErrorView(view: View) {
+        val shake = android.animation.ObjectAnimator.ofFloat(view, "translationX", 0f, 20f, -20f, 15f, -15f, 6f, -6f, 0f)
+        shake.duration = 400
+        shake.interpolator = DecelerateInterpolator()
+        shake.start()
     }
 }
