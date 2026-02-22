@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.R
@@ -24,9 +25,8 @@ class ExpenseAdapter(
     private var expenses = emptyList<Expense>()
     private var lastPosition = -1
 
-    // --- CURRENCY STATE (Added for Travel Mode) ---
-    private var exchangeRate = 1.0 // Default: 1.0 (No conversion)
-    private var targetLocale = Locale("en", "IN") // Default: India (₹)
+    private var exchangeRate = 1.0
+    private var targetLocale = Locale("en", "IN")
 
     class ExpenseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCategoryIcon: TextView = itemView.findViewById(R.id.tvCategoryIcon)
@@ -34,6 +34,7 @@ class ExpenseAdapter(
         val tvDescription: TextView = itemView.findViewById(R.id.tvDescription)
         val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         val tvAmount: TextView = itemView.findViewById(R.id.tvAmount)
+        val ivReceiptIcon: ImageView = itemView.findViewById(R.id.ivReceiptIcon) // NEW
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ExpenseViewHolder {
@@ -45,7 +46,6 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
-        // --- 1. DATA BINDING ---
         val emoji = getCategoryEmoji(currentExpense.category)
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
@@ -56,7 +56,6 @@ class ExpenseAdapter(
             holder.tvDescription.text = currentExpense.description
         }
 
-        // --- NEW CURRENCY MATH ---
         val convertedAmount = currentExpense.amount * exchangeRate
         val currencyFormat = NumberFormat.getCurrencyInstance(targetLocale)
         val formattedAmount = currencyFormat.format(convertedAmount)
@@ -70,17 +69,21 @@ class ExpenseAdapter(
         }
 
         try {
-            // Upgraded format: "21 Feb 2026, 07:37 PM"
             val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             holder.tvDate.text = dateFormat.format(Date(currentExpense.date))
         } catch (e: Exception) {
             holder.tvDate.text = "Invalid Date"
         }
 
-        // --- 2. PREMIUM CASCADE ANIMATION ---
+        // --- RECEIPT VISIBILITY LOGIC ---
+        if (currentExpense.receiptPath != null) {
+            holder.ivReceiptIcon.visibility = View.VISIBLE
+        } else {
+            holder.ivReceiptIcon.visibility = View.GONE
+        }
+
         setCascadeAnimation(holder.itemView, position)
 
-        // --- 3. PHYSICS + CLICKS + LONG PRESS ---
         val gestureDetector = GestureDetector(holder.itemView.context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 onItemClick(currentExpense)
@@ -108,14 +111,11 @@ class ExpenseAdapter(
         }
     }
 
-    // --- BUTTERY CASCADE EFFECT ---
     private fun setCascadeAnimation(viewToAnimate: View, position: Int) {
         if (position > lastPosition) {
-            // Start the view slightly lower and invisible
             viewToAnimate.translationY = 150f
             viewToAnimate.alpha = 0f
 
-            // Animate it floating up into place
             viewToAnimate.animate()
                 .translationY(0f)
                 .alpha(1f)
@@ -133,7 +133,7 @@ class ExpenseAdapter(
 
     fun setExpenses(expenses: List<Expense>) {
         this.expenses = expenses
-        this.lastPosition = -1 // Reset animation tracker when data changes
+        this.lastPosition = -1
         notifyDataSetChanged()
     }
 

@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
-// CHANGE THIS: version = 2
-@Database(entities = [Expense::class], version = 2, exportSchema = false)
+// CRITICAL FIX: Bumped to Version 3
+@Database(entities = [Expense::class], version = 3, exportSchema = false)
 abstract class ExpenseDatabase : RoomDatabase() {
 
     abstract fun expenseDao(): ExpenseDao
@@ -15,6 +17,20 @@ abstract class ExpenseDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: ExpenseDatabase? = null
 
+        // Path A: For your friends in the real world (Upgrades 1 straight to 3)
+        val MIGRATION_1_3 = object : Migration(1, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE expense_table ADD COLUMN receiptPath TEXT DEFAULT NULL")
+            }
+        }
+
+        // Path B: For YOUR specific test phone (Rescues it from Version 2 limbo to 3)
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE expense_table ADD COLUMN receiptPath TEXT DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): ExpenseDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -22,8 +38,8 @@ abstract class ExpenseDatabase : RoomDatabase() {
                     ExpenseDatabase::class.java,
                     "expense_database"
                 )
-                    // THIS LINE IS MANDATORY: It handles the upgrade safely
-                    .fallbackToDestructiveMigration()
+                    // Apply both safe migration paths
+                    .addMigrations(MIGRATION_1_3, MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

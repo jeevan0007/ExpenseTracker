@@ -95,6 +95,46 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sensorManager: SensorManager
     private var shakeDetector: ShakeDetector? = null
 
+    // --- RECEIPT PHOTO STATE ---
+    private var tempReceiptUri: android.net.Uri? = null
+    private var currentReceiptPreview: ImageView? = null
+
+    // Modern Photo Picker Launcher
+    private val pickReceiptLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
+        uri?.let {
+            tempReceiptUri = it
+            currentReceiptPreview?.apply {
+                visibility = View.VISIBLE
+                setImageURI(it)
+                // A nice pop animation when the photo attaches
+                scaleX = 0f
+                scaleY = 0f
+                animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(1.5f)).start()
+            }
+            vibratePhoneLight()
+        }
+    }
+
+    // Pro-Level Secure Storage: Copies the gallery photo into the app's hidden internal vault
+    private fun saveReceiptToInternalStorage(uri: android.net.Uri): String? {
+        return try {
+            val inputStream = contentResolver.openInputStream(uri) ?: return null
+            val fileName = "receipt_${System.currentTimeMillis()}.jpg"
+            val file = java.io.File(filesDir, fileName) // "filesDir" is completely private to your app
+            val outputStream = java.io.FileOutputStream(file)
+
+            inputStream.copyTo(outputStream)
+
+            inputStream.close()
+            outputStream.close()
+
+            file.absolutePath // This path goes directly into the Room database
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     // Session Tracker
     companion object {
         var isSessionUnlocked = false
@@ -911,6 +951,15 @@ class MainActivity : AppCompatActivity() {
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
 
+        // RECEIPT WIRING
+        val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
+        currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
+        tempReceiptUri = null // Reset state for new dialog
+        currentReceiptPreview?.setOnClickListener {
+            // Since it's a new expense, there is no saved path yet, just the temp URI
+            showFullScreenReceipt(tempReceiptUri, null)
+        }
+
         val categories = resources.getStringArray(R.array.categories).toMutableList()
         categories.add("Salary"); categories.add("Automated")
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
@@ -919,6 +968,11 @@ class MainActivity : AppCompatActivity() {
 
         val symbol = java.util.Currency.getInstance(activeCurrencyLocale).symbol
         etAmount.hint = "Amount ($symbol)"
+
+        // Launch the photo picker when clicked
+        applySquishPhysics(btnAttachReceipt) {
+            pickReceiptLauncher.launch("image/*")
+        }
 
         applySquishPhysics(btnSave) {
             val amountText = etAmount.text.toString()
@@ -940,10 +994,25 @@ class MainActivity : AppCompatActivity() {
                 rawInput
             }
 
-            // 1. Insert into DB
-            expenseViewModel.insert(Expense(amount = amountInInr, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked))
+            // 1. Securely save the receipt if one was attached
+            var finalReceiptPath: String? = null
+            tempReceiptUri?.let { uri ->
+                finalReceiptPath = saveReceiptToInternalStorage(uri)
+            }
 
-            // 2. TRIGGER THE HEARTBEAT PULSE!
+            // 2. Insert into DB (Now with the receipt path!)
+            expenseViewModel.insert(
+                Expense(
+                    amount = amountInInr,
+                    category = category,
+                    description = description,
+                    type = type,
+                    isRecurring = cbRecurring.isChecked,
+                    receiptPath = finalReceiptPath // <--- NEW DB FIELD
+                )
+            )
+
+            // 3. TRIGGER THE HEARTBEAT PULSE!
             triggerBalancePulse(type == "Income")
 
             dialog.dismiss()
@@ -1002,15 +1071,40 @@ class MainActivity : AppCompatActivity() {
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
 
+        // --- RECEIPT WIRING ---
+        val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
+        currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
+        tempReceiptUri = null // Reset for new photo selection
+        currentReceiptPreview?.setOnClickListener {
+            // Passes either the newly picked photo, or the existing saved photo
+            showFullScreenReceipt(tempReceiptUri, expense.receiptPath)
+        }
+
         val categories = resources.getStringArray(R.array.categories).toMutableList()
         categories.add("Salary"); categories.add("Automated")
         spinnerCategory.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
+        // Populate existing data
         etAmount.setText(expense.amount.toString())
         etDescription.setText(expense.description)
         cbRecurring.isChecked = expense.isRecurring
         radioGroupType.check(if (expense.type == "Income") R.id.radioIncome else R.id.radioExpense)
         categories.indexOf(expense.category).takeIf { it >= 0 }?.let { spinnerCategory.setSelection(it) }
+
+        // --- LOAD EXISTING RECEIPT ---
+        if (expense.receiptPath != null) {
+            val file = java.io.File(expense.receiptPath)
+            if (file.exists()) {
+                currentReceiptPreview?.visibility = View.VISIBLE
+                currentReceiptPreview?.setImageURI(android.net.Uri.fromFile(file))
+                btnAttachReceipt.text = "Change Receipt"
+            }
+        }
+
+        // Allow changing the receipt
+        applySquishPhysics(btnAttachReceipt) {
+            pickReceiptLauncher.launch("image/*")
+        }
 
         btnSave.text = "Update"
         applySquishPhysics(btnSave) {
@@ -1026,7 +1120,23 @@ class MainActivity : AppCompatActivity() {
 
             expenseBeforeAdd = currentExpense
 
-            expenseViewModel.update(expense.copy(amount = amount, category = spinnerCategory.selectedItem.toString(), description = description, type = type, isRecurring = cbRecurring.isChecked))
+            // --- HANDLE RECEIPT UPDATE ---
+            // Default to the old path. If they picked a new photo, save it and use the new path.
+            var finalReceiptPath = expense.receiptPath
+            tempReceiptUri?.let { uri ->
+                finalReceiptPath = saveReceiptToInternalStorage(uri)
+            }
+
+            expenseViewModel.update(
+                expense.copy(
+                    amount = amount,
+                    category = spinnerCategory.selectedItem.toString(),
+                    description = description,
+                    type = type,
+                    isRecurring = cbRecurring.isChecked,
+                    receiptPath = finalReceiptPath // Save the new (or old) path!
+                )
+            )
             dialog.dismiss()
 
             if (type == "Expense") {
@@ -1334,5 +1444,34 @@ class MainActivity : AppCompatActivity() {
         colorAnimation.start()
 
         vibratePhoneLight()
+    }
+    // --- PREMIUM FULL-SCREEN RECEIPT VIEWER ---
+    private fun showFullScreenReceipt(imageUri: android.net.Uri?, imagePath: String?) {
+        if (imageUri == null && imagePath == null) return
+
+        // Create a sleek, black, full-screen overlay
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+
+        val imageView = android.widget.ImageView(this).apply {
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+
+            // Prioritize the newly picked photo, otherwise use the saved database path
+            if (imageUri != null) {
+                setImageURI(imageUri)
+            } else if (imagePath != null) {
+                setImageURI(android.net.Uri.fromFile(java.io.File(imagePath)))
+            }
+
+            // Click anywhere on the image to close it smoothly
+            setOnClickListener { dialog.dismiss() }
+        }
+
+        dialog.setContentView(imageView)
+        dialog.window?.attributes?.windowAnimations = android.R.style.Animation_Dialog // Smooth fade
+        dialog.show()
     }
 }

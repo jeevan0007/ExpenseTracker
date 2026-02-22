@@ -12,5 +12,6 @@ data class Expense(
     val description: String,
     val date: Long = System.currentTimeMillis(),
     val type: String, // "Income" or "Expense"
-    val isRecurring: Boolean = false
+    val isRecurring: Boolean = false,
+    val receiptPath: String? = null
 )
