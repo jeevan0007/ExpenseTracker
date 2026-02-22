@@ -530,11 +530,26 @@ class MainActivity : AppCompatActivity() {
     // --- SHAKE TO RESET LOGIC ---
     private fun resetToDefaults() {
         vibrateReset()
-        Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Filters & Currency Reset! \uD83C\uDF2A\uFE0F", Toast.LENGTH_SHORT).show()
+
+        // 1. Reset Currency
         setCurrency(1.0, Locale("en", "IN"), false)
+
+        // 2. Reset Search
         expenseViewModel.setSearchQuery("")
+        val searchBar = findViewById<EditText>(R.id.etSearch)
+        searchBar.setText("")
+        searchBar.clearFocus()
+
+        // 3. Reset Category Spinner
+        expenseViewModel.setCategoryFilter("All")
+        val categorySpinner = findViewById<Spinner>(R.id.spinnerCategoryFilter)
+        categorySpinner.setSelection(0)
+
+        // 4. Reset Date Filters
         expenseViewModel.clearDateFilter()
-        findViewById<EditText>(R.id.etSearch).setText("")
+        val btnDateFilter = findViewById<Button>(R.id.btnDateFilter)
+        btnDateFilter.text = "All Time"
         tvDateHeader.text = "Showing: All Time"
     }
 

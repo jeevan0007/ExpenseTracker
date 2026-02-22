@@ -41,6 +41,28 @@ object PaymentParser {
     private fun extractMerchant(message: String, isIncome: Boolean): String {
         val singleLineMsg = message.replace("\r", "").replace("\n", " ")
 
+        // --- 🚨 NEW: ICICI Standing Instruction / Auto Debit ---
+        // Catches: "...for NETFLIX to be debited..."
+        val iciciAutoRegex = Regex("(?i)for\\s+([A-Za-z0-9\\s\\.\\&@\\-\\*]+?)\\s+to be debited")
+        val iciciAutoMatch = iciciAutoRegex.find(singleLineMsg)
+        if (iciciAutoMatch != null) return iciciAutoMatch.groupValues[1].trim().uppercase()
+
+        // --- 🚨 NEW: Generic "debited/paid for/towards" ---
+        // Catches: "Rs 500 debited from A/C for Amazon."
+        val debitedForRegex = Regex("(?i)(?:debited|paid)(?:.*?)(?:for|towards)\\s+([A-Za-z0-9\\s\\.\\&@\\-\\*]+?)(?:\\.|,| on | from )")
+        val debitedForMatch = debitedForRegex.find(singleLineMsg)
+        if (debitedForMatch != null) {
+            val found = debitedForMatch.groupValues[1].trim().uppercase()
+            if (!found.contains("A/C") && !found.contains("CARD") && !found.contains("BANK")) return found
+        }
+
+        // --- 🚨 NEW: EMI / ECS Auto-Clearances ---
+        // Catches: "EMI of Rs. 99650 is scheduled..."
+        val ecsRegex = Regex("(?i)(?:EMI|ECS) of (?:INR|Rs\\.?|₹)")
+        if (ecsRegex.containsMatchIn(singleLineMsg)) {
+            return "EMI / Auto-Debit"
+        }
+
         // 1. ICICI BANK: "on [Date] on [Merchant]. Avl Limit"
         val iciciRegex = Regex("(?i)on\\s+\\d{1,2}-[a-zA-Z]{3}-\\d{2}\\s+on\\s+(.+?)(?:\\.|\\s+Avl Limit)")
         val iciciMatch = iciciRegex.find(singleLineMsg)

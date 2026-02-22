@@ -7,7 +7,7 @@ import android.provider.Telephony
 import android.util.Log
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
-import com.jeevan.expensetracker.utils.PaymentParser // NEW: Import the Brain
+import com.jeevan.expensetracker.utils.PaymentParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,6 +26,26 @@ class SmsReceiver : BroadcastReceiver() {
 
                 // 2. If the brain successfully extracted money and merchant...
                 if (parsedExpense != null) {
+
+                    // --- THE 60-SECOND DUPLICATE BLOCKER ---
+                    val sharedPref = context.getSharedPreferences("SmsDebounce", Context.MODE_PRIVATE)
+                    val lastAmount = sharedPref.getFloat("last_amount", -1f)
+                    val lastTime = sharedPref.getLong("last_time", 0L)
+                    val currentTime = System.currentTimeMillis()
+
+                    // If the exact same amount is processed within 60 seconds, ignore it!
+                    if (lastAmount == parsedExpense.amount.toFloat() && (currentTime - lastTime) < 60000) {
+                        Log.d("SmsReceiver", "Duplicate Bank SMS ignored to prevent double-logging.")
+                        continue // Skip to the next SMS
+                    }
+
+                    // Save this new transaction to memory to block future duplicates
+                    sharedPref.edit()
+                        .putFloat("last_amount", parsedExpense.amount.toFloat())
+                        .putLong("last_time", currentTime)
+                        .apply()
+                    // ---------------------------------------
+
                     try {
                         val db = ExpenseDatabase.getDatabase(context)
 
@@ -40,9 +60,9 @@ class SmsReceiver : BroadcastReceiver() {
                             db.expenseDao().insert(
                                 Expense(
                                     amount = parsedExpense.amount,
-                                    category = detectCategory(finalDescription), // Keep your smart auto-categorizer!
+                                    category = detectCategory(finalDescription),
                                     description = finalDescription,
-                                    type = parsedExpense.type, // Uses the smart Income/Expense detection!
+                                    type = parsedExpense.type,
                                     isRecurring = false,
                                     date = System.currentTimeMillis()
                                 )
@@ -56,14 +76,13 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    // Your existing smart auto-categorizer
     private fun detectCategory(desc: String): String {
         val d = desc.lowercase()
         return when {
             d.contains("swiggy") || d.contains("zomato") || d.contains("food") -> "Food"
             d.contains("uber") || d.contains("ola") || d.contains("fuel") || d.contains("petrol") -> "Transport"
             d.contains("jio") || d.contains("airtel") || d.contains("bill") || d.contains("netflix") -> "Bills"
-            d.contains("amazon") || d.contains("flipkart") -> "Shopping"
+            d.contains("amazon") || d.contains("flipkart") || d.contains("myntra") -> "Shopping"
             else -> "Automated"
         }
     }
