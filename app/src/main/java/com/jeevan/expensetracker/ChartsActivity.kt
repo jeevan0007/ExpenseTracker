@@ -102,7 +102,7 @@ class ChartsActivity : AppCompatActivity() {
             val convertedAmount = entry.value * activeRate
             val formattedString = activeFormat.format(convertedAmount)
 
-            // Add to Chart (Pie Slice)
+            // Add to Chart (Pie Slice). The PieChart holds the CONVERTED amount.
             entries.add(PieEntry(convertedAmount.toFloat(), entry.key))
 
             // Add to List (Bottom Recycler)
@@ -115,7 +115,7 @@ class ChartsActivity : AppCompatActivity() {
         dataSet.colors = palette
         dataSet.sliceSpace = 3f
         dataSet.selectionShift = 12f
-        dataSet.setDrawValues(false)
+        dataSet.setDrawValues(false) // Don't draw messy numbers on the slices themselves
 
         val data = PieData(dataSet)
         pieChart.data = data
@@ -123,33 +123,62 @@ class ChartsActivity : AppCompatActivity() {
         pieChart.legend.isEnabled = false
         pieChart.setExtraOffsets(20f, 0f, 20f, 0f)
 
-        pieChart.setDrawEntryLabels(false)
+        pieChart.setDrawEntryLabels(false) // Don't draw text labels on the slices
+
+        // --- DONUT HOLE SETUP ---
         pieChart.isDrawHoleEnabled = true
         pieChart.setHoleColor(Color.TRANSPARENT)
-        pieChart.holeRadius = 70f
-        pieChart.transparentCircleRadius = 75f
+        pieChart.holeRadius = 65f // Slightly larger hole for better text fitting
+        pieChart.transparentCircleRadius = 70f
+        pieChart.setDrawCenterText(true)
+        pieChart.centerTextRadiusPercent = 100f // Allow text to use the full hole
 
-        updateCenterText("Total", totalSpentAmount)
+        // Set initial total
+        updateCenterTextTotal()
 
-        pieChart.animateY(1400, Easing.EaseInOutQuad)
+        // --- BUTTERY ENTRANCE ANIMATION ---
+        pieChart.animateY(1200, Easing.EaseOutBounce)
 
+        // --- INTERACTIVITY LOGIC ---
         pieChart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
             override fun onValueSelected(e: Entry?, h: Highlight?) {
                 if (h == null) return
+
+                // e is a PieEntry. It contains the label and the CONVERTED value.
                 val pieEntry = e as? PieEntry
                 val label = pieEntry?.label ?: "Unknown"
+                val convertedAmount = pieEntry?.value?.toDouble() ?: 0.0
 
-                val amount = pieEntry?.value?.toDouble() ?: 0.0
-                updateCenterTextSelected(label, amount)
+                // Update the center text to show the selected slice's details
+                pieChart.centerText = "$label\n${activeFormat.format(convertedAmount)}"
+                pieChart.setCenterTextSize(18f)
+                pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
 
+                // Scroll the list below to match the selected slice (SLOW & SMOOTH)!
                 val index = h.x.toInt()
                 if (index in chartItemList.indices) {
-                    rvDetails.smoothScrollToPosition(index)
+                    val smoothScroller = object : androidx.recyclerview.widget.LinearSmoothScroller(this@ChartsActivity) {
+                        override fun calculateSpeedPerPixel(displayMetrics: android.util.DisplayMetrics): Float {
+                            // The default Android speed is 25f.
+                            // Changing this to 150f makes it glide beautifully slowly.
+                            return 150f / displayMetrics.densityDpi
+                        }
+
+                        // This ensures the item perfectly snaps to the top of the list view
+                        override fun getVerticalSnapPreference(): Int {
+                            return SNAP_TO_START
+                        }
+                    }
+                    smoothScroller.targetPosition = index
+                    rvDetails.layoutManager?.startSmoothScroll(smoothScroller)
+                    (rvDetails.adapter as? ChartDetailAdapter)?.setHighlight(index)
                 }
             }
 
             override fun onNothingSelected() {
-                updateCenterText("Total", totalSpentAmount)
+                // When they tap away from the slice, revert to showing the grand total
+                updateCenterTextTotal()
+                (rvDetails.adapter as? ChartDetailAdapter)?.setHighlight(-1)
             }
         })
 
@@ -187,7 +216,9 @@ class ChartsActivity : AppCompatActivity() {
         barChart.description.isEnabled = false
         barChart.axisRight.isEnabled = false
         barChart.legend.isEnabled = false
-        barChart.animateY(1400, Easing.EaseInOutQuad)
+
+        // Add entrance animation
+        barChart.animateY(1200, Easing.EaseOutQuad)
         barChart.setExtraOffsets(0f, 0f, 0f, 15f)
 
         // X-Axis Styling
@@ -204,19 +235,17 @@ class ChartsActivity : AppCompatActivity() {
         barChart.axisLeft.textColor = if (isDarkMode()) Color.WHITE else Color.BLACK
         barChart.axisLeft.setDrawGridLines(true)
 
+        // Disable touching on the bar chart so it acts as a clean visual summary
+        barChart.setTouchEnabled(false)
+
         barChart.invalidate()
     }
 
-    private fun updateCenterText(label: String, rawAmount: Double) {
-        val converted = rawAmount * activeRate
-        pieChart.centerText = "$label\n${activeFormat.format(converted)}"
-        pieChart.setCenterTextSize(20f)
-        pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
-    }
-
-    private fun updateCenterTextSelected(label: String, convertedAmount: Double) {
-        pieChart.centerText = "$label\n${activeFormat.format(convertedAmount)}"
-        pieChart.setCenterTextSize(20f)
+    // Helper to format the grand total for the donut hole
+    private fun updateCenterTextTotal() {
+        val convertedTotal = totalSpentAmount * activeRate
+        pieChart.centerText = "Total Spending\n${activeFormat.format(convertedTotal)}"
+        pieChart.setCenterTextSize(16f) // Slightly smaller font for "Total Spending" to ensure it fits
         pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
     }
 
