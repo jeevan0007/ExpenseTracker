@@ -35,6 +35,11 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+// --- NEW DRAWER IMPORTS ---
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
+import com.google.android.material.navigation.NavigationView
+// --------------------------
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -157,6 +162,36 @@ class MainActivity : AppCompatActivity() {
         tvDateHeader = findViewById(R.id.tvDateHeader)
         lottieAnimationView = findViewById(R.id.lottieAnimationView)
 
+        // --- NEW: NAVIGATION DRAWER SETUP ---
+        val drawerLayout = findViewById<DrawerLayout>(R.id.drawerLayout)
+        val navView = findViewById<NavigationView>(R.id.navView)
+
+        val btnOpenDrawer = findViewById<ImageView>(R.id.btnOpenDrawer)
+        applySquishPhysics(btnOpenDrawer) {
+            drawerLayout.openDrawer(GravityCompat.START)
+        }
+
+        navView.setNavigationItemSelectedListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.nav_home -> {
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                }
+                R.id.nav_recycle_bin -> {
+                    // This will crash if RecycleBinActivity doesn't exist yet, but it's wired!
+                    val intent = Intent(this, RecycleBinActivity::class.java)
+                    startActivity(intent)
+                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                }
+                R.id.nav_settings -> {
+                    Toast.makeText(this, "Settings coming soon!", Toast.LENGTH_SHORT).show()
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                }
+            }
+            true
+        }
+        // ------------------------------------
+
         // --- SHAKE DETECTOR SETUP ---
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         shakeDetector = ShakeDetector {
@@ -183,6 +218,8 @@ class MainActivity : AppCompatActivity() {
         val budgetRequest = androidx.work.PeriodicWorkRequestBuilder<BudgetWorker>(12, TimeUnit.HOURS).build()
         androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork("BudgetWatchdog", androidx.work.ExistingPeriodicWorkPolicy.KEEP, budgetRequest)
 
+        val cleanerRequest = PeriodicWorkRequestBuilder<com.jeevan.expensetracker.worker.RecycleBinWorker>(1, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork("RecycleBinCleaner", ExistingPeriodicWorkPolicy.KEEP, cleanerRequest)
         // --- VIEW MODEL ---
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
 
@@ -530,26 +567,11 @@ class MainActivity : AppCompatActivity() {
     // --- SHAKE TO RESET LOGIC ---
     private fun resetToDefaults() {
         vibrateReset()
-        Toast.makeText(this, "Filters & Currency Reset! \uD83C\uDF2A\uFE0F", Toast.LENGTH_SHORT).show()
-
-        // 1. Reset Currency
+        Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
         setCurrency(1.0, Locale("en", "IN"), false)
-
-        // 2. Reset Search
         expenseViewModel.setSearchQuery("")
-        val searchBar = findViewById<EditText>(R.id.etSearch)
-        searchBar.setText("")
-        searchBar.clearFocus()
-
-        // 3. Reset Category Spinner
-        expenseViewModel.setCategoryFilter("All")
-        val categorySpinner = findViewById<Spinner>(R.id.spinnerCategoryFilter)
-        categorySpinner.setSelection(0)
-
-        // 4. Reset Date Filters
         expenseViewModel.clearDateFilter()
-        val btnDateFilter = findViewById<Button>(R.id.btnDateFilter)
-        btnDateFilter.text = "All Time"
+        findViewById<EditText>(R.id.etSearch).setText("")
         tvDateHeader.text = "Showing: All Time"
     }
 

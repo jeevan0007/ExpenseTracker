@@ -26,11 +26,28 @@ class ExpenseRepository(private val expenseDao: ExpenseDao) {
         expenseDao.insert(expense)
     }
 
-    suspend fun delete(expense: Expense) {
-        expenseDao.delete(expense)
-    }
-
     suspend fun update(expense: Expense) {
         expenseDao.update(expense)
+    }
+
+    // --- 🚨 RECYCLE BIN LOGIC 🚨 ---
+    suspend fun moveToRecycleBin(id: Int, timestamp: Long) {
+        expenseDao.moveToRecycleBin(id, timestamp)
+    }
+
+    suspend fun restoreFromRecycleBin(id: Int) {
+        expenseDao.restoreFromRecycleBin(id)
+    }
+
+    fun getDeletedExpenses(): LiveData<List<Expense>> {
+        return expenseDao.getDeletedExpenses()
+    }
+
+    suspend fun emptyRecycleBin() {
+        expenseDao.emptyRecycleBin()
+    }
+
+    suspend fun hardDelete(expense: Expense) {
+        expenseDao.hardDelete(expense)
     }
 }

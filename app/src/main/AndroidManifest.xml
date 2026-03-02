@@ -91,6 +91,10 @@
             android:launchMode="singleInstance"
             android:taskAffinity=".WidgetPopupTask"
             android:exported="true" />
+        <activity
+            android:name=".RecycleBinActivity"
+            android:screenOrientation="portrait"
+            android:exported="false" />
 
     </application>
 

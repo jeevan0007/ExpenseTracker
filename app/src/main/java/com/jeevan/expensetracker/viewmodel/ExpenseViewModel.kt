@@ -45,12 +45,31 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         repository.insert(expense)
     }
 
+    // --- 🚨 THE NINJA SWAP 🚨 ---
+    // UI thinks it deletes, but it actually soft-deletes to the bin!
     fun delete(expense: Expense) = viewModelScope.launch(Dispatchers.IO) {
-        repository.delete(expense)
+        repository.moveToRecycleBin(expense.id, System.currentTimeMillis())
     }
 
     fun update(expense: Expense) = viewModelScope.launch(Dispatchers.IO) {
         repository.update(expense)
+    }
+
+    // --- RECYCLE BIN ACTIONS ---
+    fun restore(expense: Expense) = viewModelScope.launch(Dispatchers.IO) {
+        repository.restoreFromRecycleBin(expense.id)
+    }
+
+    fun getDeletedExpenses(): LiveData<List<Expense>> {
+        return repository.getDeletedExpenses()
+    }
+
+    fun emptyRecycleBin() = viewModelScope.launch(Dispatchers.IO) {
+        repository.emptyRecycleBin()
+    }
+
+    fun hardDelete(expense: Expense) = viewModelScope.launch(Dispatchers.IO) {
+        repository.hardDelete(expense)
     }
 
     fun setSearchQuery(query: String) {
