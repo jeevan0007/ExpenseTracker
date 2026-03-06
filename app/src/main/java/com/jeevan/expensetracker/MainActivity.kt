@@ -28,6 +28,7 @@ import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.*
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -36,6 +37,8 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.navigation.NavigationView
 import androidx.lifecycle.ViewModelProvider
@@ -151,8 +154,34 @@ class MainActivity : AppCompatActivity() {
         // 1. Install the Splash Screen BEFORE super.onCreate!
         installSplashScreen()
 
+        // 2. Enable Edge-to-Edge immersive mode!
+        enableEdgeToEdge()
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // 3. Set up Window Insets to protect UI from camera notch & swipe bar
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.drawerLayout)) { _, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+
+            // Push Drawer Button down
+            val btnOpenDrawer = findViewById<ImageView>(R.id.btnOpenDrawer)
+            val drawerParams = btnOpenDrawer.layoutParams as ViewGroup.MarginLayoutParams
+            drawerParams.topMargin = systemBars.top + dpToPx(16)
+            btnOpenDrawer.layoutParams = drawerParams
+
+            // Push Main FAB up
+            val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
+            val fabParams = fabMain.layoutParams as ViewGroup.MarginLayoutParams
+            fabParams.bottomMargin = systemBars.bottom + dpToPx(24)
+            fabMain.layoutParams = fabParams
+
+            // Pad RecyclerView so last item isn't cut off
+            val rvExpenses = findViewById<RecyclerView>(R.id.rvExpenses)
+            rvExpenses.setPadding(0, 0, 0, systemBars.bottom + dpToPx(80))
+
+            insets
+        }
 
         // 1. LOAD SAVED THEME & CURRENCY IMMEDIATELY
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
@@ -478,7 +507,6 @@ class MainActivity : AppCompatActivity() {
             isFabExpanded = !isFabExpanded
             vibratePhoneLight()
             if (isFabExpanded) {
-                toggleGlassBlur(true) // <--- GLASS BLUR TRIGGERED
                 dimOverlay.visibility = View.VISIBLE
                 dimOverlay.animate().alpha(1f).setDuration(200).start()
                 fabMain.animate().rotation(135f).setDuration(250).start()
@@ -505,8 +533,6 @@ class MainActivity : AppCompatActivity() {
     private fun closeFabMenu() {
         if (!isFabExpanded) return
         isFabExpanded = false
-
-        toggleGlassBlur(false) // <--- GLASS BLUR REMOVED
 
         val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
         val dimOverlay = findViewById<View>(R.id.fabDimOverlay)
@@ -547,7 +573,6 @@ class MainActivity : AppCompatActivity() {
         if (isAppLockEnabled && !isSessionUnlocked) {
             lockedOverlay.visibility = View.VISIBLE
             lockedOverlay.alpha = 1f
-            toggleGlassBlur(true) // <--- GLASS BLUR TRIGGERED
 
             // Post delay guarantees the layout is fully drawn before Samsung's dialog intercepts it
             lockedOverlay.postDelayed({
@@ -555,7 +580,6 @@ class MainActivity : AppCompatActivity() {
             }, 300)
         } else {
             lockedOverlay.visibility = View.GONE
-            toggleGlassBlur(false) // <--- GLASS BLUR REMOVED
         }
     }
 
@@ -892,7 +916,6 @@ class MainActivity : AppCompatActivity() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
                     isSessionUnlocked = true
-                    toggleGlassBlur(false) // <--- GLASS BLUR REMOVED
                     overlay.animate().alpha(0f).setDuration(400).withEndAction {
                         overlay.visibility = View.GONE
                     }.start()
@@ -1433,21 +1456,5 @@ class MainActivity : AppCompatActivity() {
         shake.duration = 400
         shake.interpolator = DecelerateInterpolator()
         shake.start()
-    }
-
-    // --- TRUE GLASS BLUR ENGINE (Android 12+) ---
-    private fun toggleGlassBlur(enable: Boolean) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val blurEffect = if (enable) {
-                // 40f creates a heavy, premium frosted glass look
-                android.graphics.RenderEffect.createBlurEffect(40f, 40f, android.graphics.Shader.TileMode.CLAMP)
-            } else {
-                null
-            }
-            // Blur the header and the list
-            findViewById<View>(R.id.appBarLayout).setRenderEffect(blurEffect)
-            findViewById<View>(R.id.rvExpenses).setRenderEffect(blurEffect)
-            findViewById<View>(R.id.layoutEmptyState).setRenderEffect(blurEffect)
-        }
     }
 }
