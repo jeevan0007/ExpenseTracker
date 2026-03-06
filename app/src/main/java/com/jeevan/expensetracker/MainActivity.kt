@@ -403,7 +403,14 @@ class MainActivity : AppCompatActivity() {
                 appBarContent.layoutParams = params
                 rvExpenses.visibility = View.VISIBLE
                 layoutEmptyState.visibility = View.GONE
+
+                // --- CASCADING ANIMATION TRIGGER ---
+                val context = rvExpenses.context
+                val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(context, R.anim.layout_anim_cascade)
+                rvExpenses.layoutAnimation = controller
+
                 adapter.setExpenses(expenses)
+                rvExpenses.scheduleLayoutAnimation() // Forces the cascade to play!
             }
         }
 

@@ -72,7 +72,14 @@ class RecycleBinActivity : AppCompatActivity() {
                 layoutEmptyBin.visibility = View.GONE
                 btnEmptyBin.isEnabled = true
                 btnEmptyBin.alpha = 1.0f
+
+                // --- CASCADING ANIMATION TRIGGER ---
+                val context = rvDeletedExpenses.context
+                val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(context, R.anim.layout_anim_cascade)
+                rvDeletedExpenses.layoutAnimation = controller
+
                 adapter.setExpenses(expenses)
+                rvDeletedExpenses.scheduleLayoutAnimation() // Forces the cascade to play!
             }
         }
 
