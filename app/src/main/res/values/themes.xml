@@ -1,35 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.ExpenseTracker" parent="Theme.Material3.Light.NoActionBar">
-        <!-- Primary brand color -->
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
         <item name="colorOnPrimary">@color/white</item>
 
-        <!-- Secondary brand color -->
         <item name="colorSecondary">@color/teal_200</item>
         <item name="colorSecondaryVariant">@color/teal_700</item>
         <item name="colorOnSecondary">@color/black</item>
 
-        <!-- Status bar color -->
         <item name="android:statusBarColor">@color/purple_500</item>
         <item name="android:windowLightStatusBar">false</item>
+
+        <item name="android:fontFamily">@font/inter</item>
     </style>
-    <!-- Dialog Animation Style -->
+
     <style name="DialogAnimation">
         <item name="android:windowEnterAnimation">@anim/scale_bounce</item>
         <item name="android:windowExitAnimation">@android:anim/fade_out</item>
     </style>
+
     <style name="WidgetDialogTheme" parent="Theme.Material3.DayNight.Dialog">
         <item name="android:windowBackground">@drawable/rounded_dialog_bg</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
     <style name="PremiumDatePickerTheme" parent="ThemeOverlay.Material3.MaterialCalendar">
         <item name="colorPrimary">#673AB7</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorPrimaryContainer">#33673AB7</item>
         <item name="colorOnSurface">#673AB7</item>
     </style>
+
     <style name="Theme.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">#FFFFFF</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>

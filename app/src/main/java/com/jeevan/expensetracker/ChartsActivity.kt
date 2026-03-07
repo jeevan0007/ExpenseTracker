@@ -1,11 +1,18 @@
 package com.jeevan.expensetracker
 
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
+import android.view.View
 import android.widget.ImageButton
+import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.res.ResourcesCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -39,11 +46,35 @@ class ChartsActivity : AppCompatActivity() {
     private var activeRate: Double = 1.0
     private lateinit var activeFormat: NumberFormat
 
+    // --- PREMIUM FONT ---
+    private var customTypeface: Typeface? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 1. Enable Edge-to-Edge
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_charts)
 
-        // 1. LOAD PERSISTENT DATA (Travel Mode / Currency Fix)
+        // 2. Fetch the Inter font to inject into the charts
+        customTypeface = ResourcesCompat.getFont(this, R.font.inter)
+
+        // 3. Protect UI from Notches and Swipe Bars
+        val headerLayout = findViewById<View>(R.id.headerLayout)
+        val scrollView = findViewById<ScrollView>(R.id.chartsScrollView)
+
+        ViewCompat.setOnApplyWindowInsetsListener(headerLayout) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(view.paddingLeft, systemBars.top + dpToPx(16), view.paddingRight, view.paddingBottom)
+            insets
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(scrollView) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, systemBars.bottom + dpToPx(24))
+            insets
+        }
+
+        // 4. LOAD PERSISTENT DATA (Travel Mode / Currency Fix)
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         activeRate = sharedPref.getFloat("currency_rate", 1.0f).toDouble()
         val lang = sharedPref.getString("currency_lang", "en") ?: "en"
@@ -133,6 +164,9 @@ class ChartsActivity : AppCompatActivity() {
         pieChart.setDrawCenterText(true)
         pieChart.centerTextRadiusPercent = 100f // Allow text to use the full hole
 
+        // Inject Inter Font
+        customTypeface?.let { pieChart.setCenterTextTypeface(it) }
+
         // Set initial total
         updateCenterTextTotal()
 
@@ -205,9 +239,12 @@ class ChartsActivity : AppCompatActivity() {
         barEntries.add(BarEntry(1f, convertedExpense))
 
         val dataSet = BarDataSet(barEntries, "")
-        dataSet.colors = listOf(Color.parseColor("#4CAF50"), Color.parseColor("#F44336"))
+        dataSet.colors = listOf(Color.parseColor("#4CAF50"), Color.parseColor("#FF5252"))
         dataSet.valueTextSize = 12f
         dataSet.valueTextColor = if (isDarkMode()) Color.WHITE else Color.BLACK
+
+        // Inject Inter Font to values on top of bars
+        customTypeface?.let { dataSet.valueTypeface = it }
 
         val data = BarData(dataSet)
         data.barWidth = 0.5f
@@ -229,11 +266,13 @@ class ChartsActivity : AppCompatActivity() {
         xAxis.granularity = 1f
         xAxis.textSize = 14f
         xAxis.textColor = if (isDarkMode()) Color.WHITE else Color.BLACK
+        customTypeface?.let { xAxis.typeface = it } // Inject Font
 
         // Y-Axis Styling
         barChart.axisLeft.axisMinimum = 0f
         barChart.axisLeft.textColor = if (isDarkMode()) Color.WHITE else Color.BLACK
         barChart.axisLeft.setDrawGridLines(true)
+        customTypeface?.let { barChart.axisLeft.typeface = it } // Inject Font
 
         // Disable touching on the bar chart so it acts as a clean visual summary
         barChart.setTouchEnabled(false)
@@ -275,6 +314,10 @@ class ChartsActivity : AppCompatActivity() {
 
     private fun isDarkMode(): Boolean {
         return AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
     }
 
     override fun onBackPressed() {

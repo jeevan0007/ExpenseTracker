@@ -34,7 +34,7 @@ class ExpenseAdapter(
         val tvDescription: TextView = itemView.findViewById(R.id.tvDescription)
         val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         val tvAmount: TextView = itemView.findViewById(R.id.tvAmount)
-        val ivReceiptIcon: ImageView = itemView.findViewById(R.id.ivReceiptIcon) // NEW
+        val ivReceiptIcon: ImageView = itemView.findViewById(R.id.ivReceiptIcon)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ExpenseViewHolder {
@@ -82,6 +82,7 @@ class ExpenseAdapter(
             holder.ivReceiptIcon.visibility = View.GONE
         }
 
+        // Trigger the scroll animation engine
         setCascadeAnimation(holder.itemView, position)
 
         val gestureDetector = GestureDetector(holder.itemView.context, object : GestureDetector.SimpleOnGestureListener() {
@@ -111,24 +112,38 @@ class ExpenseAdapter(
         }
     }
 
+    // --- UPGRADED SCROLL ANIMATION ENGINE ---
     private fun setCascadeAnimation(viewToAnimate: View, position: Int) {
+        // 1. Cancel any leftover animations from recycling
+        viewToAnimate.animate().cancel()
+
         if (position > lastPosition) {
+            // Scrolling DOWN: Slide up and fade in
             viewToAnimate.translationY = 150f
             viewToAnimate.alpha = 0f
 
             viewToAnimate.animate()
                 .translationY(0f)
                 .alpha(1f)
-                .setDuration(400)
+                .setDuration(350)
                 .setInterpolator(DecelerateInterpolator(1.5f))
                 .start()
 
             lastPosition = position
+        } else {
+            // Scrolling UP: Snap instantly into place to prevent ghosting
+            viewToAnimate.translationY = 0f
+            viewToAnimate.alpha = 1f
         }
     }
 
+    // --- CRITICAL RECYCLING FIX ---
     override fun onViewDetachedFromWindow(holder: ExpenseViewHolder) {
-        holder.itemView.clearAnimation()
+        super.onViewDetachedFromWindow(holder)
+        // If the view goes off-screen mid-animation, kill the animation and reset it!
+        holder.itemView.animate().cancel()
+        holder.itemView.alpha = 1f
+        holder.itemView.translationY = 0f
     }
 
     fun setExpenses(expenses: List<Expense>) {

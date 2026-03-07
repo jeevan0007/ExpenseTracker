@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
@@ -14,6 +15,9 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
 
     // Tracks which row is currently glowing
     private var highlightedPosition = -1
+
+    // Tracks the scroll animation
+    private var lastPosition = -1
 
     class ChartViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val viewColorIndicator: View = view.findViewById(R.id.viewColorIndicator)
@@ -38,6 +42,9 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
         holder.tvPercentage.text = String.format("%.1f%%", item.percentage)
         holder.tvAmount.text = item.formattedString
 
+        // Trigger the scroll animation engine
+        setCascadeAnimation(holder.itemView, position)
+
         // --- THE MAGIC GLOW LOGIC ---
         if (position == highlightedPosition) {
             // Create a super soft, 15% transparent version of the category's actual color
@@ -58,8 +65,40 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
             holder.itemView.setBackgroundColor(Color.TRANSPARENT)
             holder.itemView.scaleX = 1.0f
             holder.itemView.scaleY = 1.0f
-            holder.itemView.clearAnimation()
         }
+    }
+
+    // --- SCROLL ANIMATION ENGINE ---
+    private fun setCascadeAnimation(viewToAnimate: View, position: Int) {
+        if (position > lastPosition) {
+            // Scrolling DOWN: Slide up and fade in
+            viewToAnimate.translationY = 150f
+            viewToAnimate.alpha = 0f
+
+            viewToAnimate.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(350)
+                .setInterpolator(DecelerateInterpolator(1.5f))
+                .start()
+
+            lastPosition = position
+        } else {
+            // Scrolling UP or Refreshing: Snap instantly into place to prevent ghosting
+            viewToAnimate.translationY = 0f
+            viewToAnimate.alpha = 1f
+        }
+    }
+
+    // --- CRITICAL RECYCLING FIX ---
+    override fun onViewDetachedFromWindow(holder: ChartViewHolder) {
+        super.onViewDetachedFromWindow(holder)
+        // If the view goes off-screen mid-animation, kill the animation and reset it!
+        holder.itemView.animate().cancel()
+        holder.itemView.alpha = 1f
+        holder.itemView.translationY = 0f
+        holder.itemView.scaleX = 1f
+        holder.itemView.scaleY = 1f
     }
 
     override fun getItemCount(): Int {

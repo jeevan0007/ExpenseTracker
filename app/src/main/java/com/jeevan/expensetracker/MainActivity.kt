@@ -514,6 +514,7 @@ class MainActivity : AppCompatActivity() {
             isFabExpanded = !isFabExpanded
             vibratePhoneLight()
             if (isFabExpanded) {
+                toggleGlassBlur(true) // <--- GLASS BLUR ENABLED
                 dimOverlay.visibility = View.VISIBLE
                 dimOverlay.animate().alpha(1f).setDuration(200).start()
                 fabMain.animate().rotation(135f).setDuration(250).start()
@@ -540,6 +541,8 @@ class MainActivity : AppCompatActivity() {
     private fun closeFabMenu() {
         if (!isFabExpanded) return
         isFabExpanded = false
+
+        toggleGlassBlur(false) // <--- GLASS BLUR DISABLED
 
         val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
         val dimOverlay = findViewById<View>(R.id.fabDimOverlay)
@@ -580,6 +583,7 @@ class MainActivity : AppCompatActivity() {
         if (isAppLockEnabled && !isSessionUnlocked) {
             lockedOverlay.visibility = View.VISIBLE
             lockedOverlay.alpha = 1f
+            toggleGlassBlur(true) // <--- GLASS BLUR ENABLED
 
             // Post delay guarantees the layout is fully drawn before Samsung's dialog intercepts it
             lockedOverlay.postDelayed({
@@ -587,6 +591,7 @@ class MainActivity : AppCompatActivity() {
             }, 300)
         } else {
             lockedOverlay.visibility = View.GONE
+            toggleGlassBlur(false) // <--- GLASS BLUR DISABLED
         }
     }
 
@@ -613,14 +618,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- SHAKE TO RESET LOGIC ---
+    // --- SHAKE TO RESET LOGIC ---
     private fun resetToDefaults() {
         vibrateReset()
         Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
+
+        // 1. Reset Currency
         setCurrency(1.0, Locale("en", "IN"), false)
+
+        // 2. Reset Search
         expenseViewModel.setSearchQuery("")
-        expenseViewModel.clearDateFilter()
         findViewById<EditText>(R.id.etSearch).setText("")
+
+        // 3. Reset Date Filter UI & Data
+        expenseViewModel.clearDateFilter()
         tvDateHeader.text = "Showing: All Time"
+        findViewById<Button>(R.id.btnDateFilter).text = "All Time"
+
+        // 4. Reset Category Filter UI & Data (The missing piece!)
+        expenseViewModel.setCategoryFilter("All")
+        findViewById<Spinner>(R.id.spinnerCategoryFilter).setSelection(0)
     }
 
     private fun loadSavedCurrency(sharedPref: android.content.SharedPreferences) {
@@ -923,6 +940,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
                     isSessionUnlocked = true
+                    toggleGlassBlur(false) // <--- GLASS BLUR DISABLED ON UNLOCK
                     overlay.animate().alpha(0f).setDuration(400).withEndAction {
                         overlay.visibility = View.GONE
                     }.start()
@@ -1463,5 +1481,21 @@ class MainActivity : AppCompatActivity() {
         shake.duration = 400
         shake.interpolator = DecelerateInterpolator()
         shake.start()
+    }
+
+    // --- TRUE GLASS BLUR ENGINE (Android 12+) ---
+    private fun toggleGlassBlur(enable: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val blurEffect = if (enable) {
+                // 40f creates a heavy, premium frosted glass look
+                android.graphics.RenderEffect.createBlurEffect(40f, 40f, android.graphics.Shader.TileMode.CLAMP)
+            } else {
+                null
+            }
+            // Blur the header and the list
+            findViewById<View>(R.id.appBarLayout).setRenderEffect(blurEffect)
+            findViewById<View>(R.id.rvExpenses).setRenderEffect(blurEffect)
+            findViewById<View>(R.id.layoutEmptyState).setRenderEffect(blurEffect)
+        }
     }
 }
