@@ -290,6 +290,29 @@ class MainActivity : AppCompatActivity() {
 
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
+        // 🔥 NEW: SMART FAB SCROLLING ENGINE 🔥
+        recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                super.onScrollStateChanged(recyclerView, newState)
+                // If the user touches the list to scroll, instantly auto-close the premium FAB menu
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING && isFabExpanded) {
+                    closeFabMenu()
+                }
+            }
+
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                super.onScrolled(recyclerView, dx, dy)
+                val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
+
+                // dy > 0 means scrolling down the list. dy < 0 means scrolling back up.
+                // We use 10 and -10 as a buffer so it doesn't glitch on tiny accidental thumb twitches.
+                if (dy > 10 && fabMain.isShown) {
+                    fabMain.hide()
+                } else if (dy < -10 && !fabMain.isShown) {
+                    fabMain.show()
+                }
+            }
+        })
 
         // --- PREMIUM SWIPE TO DELETE ---
         val swipeCallback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
@@ -423,7 +446,7 @@ class MainActivity : AppCompatActivity() {
                 layoutEmptyState.animate().alpha(1f).setDuration(400).start()
                 adapter.setExpenses(emptyList())
             } else {
-                params.scrollFlags = com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_ENTER_ALWAYS
+                params.scrollFlags = com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SNAP
                 appBarContent.layoutParams = params
                 rvExpenses.visibility = View.VISIBLE
                 layoutEmptyState.visibility = View.GONE
