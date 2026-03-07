@@ -144,7 +144,8 @@ class MainActivity : AppCompatActivity() {
     // --- PRO-LEVEL SESSION TRACKER ---
     companion object {
         var isSessionUnlocked = false
-        var backgroundedTime = 0L // Tracks true minimization to home screen
+        var backgroundedTime = 0L
+        var isNavigatingInternally = false // 🔥 NEW: Our hallway pass
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -205,6 +206,7 @@ class MainActivity : AppCompatActivity() {
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_recycle_bin -> {
+                    isNavigatingInternally = true // 🔥 Give the pass!
                     val intent = Intent(this, RecycleBinActivity::class.java)
                     startActivity(intent)
                     overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
@@ -504,6 +506,7 @@ class MainActivity : AppCompatActivity() {
         applySquishPhysics(findViewById<Button>(R.id.btnDateFilter)) { showDateFilterDialog() }
 
         applySquishPhysics(findViewById<Button>(R.id.btnViewCharts)) {
+            isNavigatingInternally = true // 🔥 Give the pass!
             val intent = Intent(this, ChartsActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
@@ -591,6 +594,7 @@ class MainActivity : AppCompatActivity() {
     // --- TRUE BACKGROUND LIFECYCLE TRACKING ---
     override fun onStart() {
         super.onStart()
+        isNavigatingInternally = false // 🔥 Reset the flag now that we are back
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         val isAppLockEnabled = sharedPref.getBoolean("app_lock_enabled", false)
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
@@ -619,8 +623,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        // Stamped ONLY when you physically leave the app (Home Screen, Recent Apps)
-        backgroundedTime = System.currentTimeMillis()
+        // 🔥 Only stamp the time if we are actually leaving the app to the home screen
+        if (!isNavigatingInternally) {
+            backgroundedTime = System.currentTimeMillis()
+        }
     }
 
     // --- SENSOR LIFECYCLE ---
@@ -1077,6 +1083,7 @@ class MainActivity : AppCompatActivity() {
         etAmount.hint = "Amount ($symbol)"
 
         applySquishPhysics(btnAttachReceipt) {
+            isNavigatingInternally = true
             pickReceiptLauncher.launch("image/*")
         }
 
@@ -1224,6 +1231,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         applySquishPhysics(btnAttachReceipt) {
+            isNavigatingInternally = true
             pickReceiptLauncher.launch("image/*")
         }
 

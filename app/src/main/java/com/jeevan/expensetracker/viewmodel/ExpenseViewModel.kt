@@ -3,6 +3,7 @@ package com.jeevan.expensetracker.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData // 🔥 NEW: Imported this to handle dynamic updates
 import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.viewModelScope
 import com.jeevan.expensetracker.data.Expense
@@ -15,8 +16,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     private val repository: ExpenseRepository
     val allExpenses: LiveData<List<Expense>>
-    val totalIncome: LiveData<Double>
-    val totalExpenses: LiveData<Double>
+
+    // 🔥 NEW: Make these Mutable so we can update them dynamically based on filters!
+    private val _totalIncome = MutableLiveData<Double>(0.0)
+    val totalIncome: LiveData<Double> get() = _totalIncome
+
+    private val _totalExpenses = MutableLiveData<Double>(0.0)
+    val totalExpenses: LiveData<Double> get() = _totalExpenses
 
     // This "Mediator" is the key. It watches the database AND filters at the same time.
     val filteredExpenses = MediatorLiveData<List<Expense>>()
@@ -32,8 +38,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         val expenseDao = ExpenseDatabase.getDatabase(application).expenseDao()
         repository = ExpenseRepository(expenseDao)
         allExpenses = repository.allExpenses
-        totalIncome = repository.totalIncome
-        totalExpenses = repository.totalExpenses
+
+        // We REMOVED the direct repository ties for totalIncome and totalExpenses
+        // because they were hardwired to "All Time".
 
         // FIX: Watch the database for changes
         filteredExpenses.addSource(allExpenses) { expenses ->
@@ -123,6 +130,22 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         if (isDateFilterActive) {
             result = result.filter { it.date in currentDateStart..currentDateEnd }
         }
+
+        // 🔥 NEW: Dynamically calculate Income and Expenses for the FILTERED list
+        var calculatedIncome = 0.0
+        var calculatedExpense = 0.0
+
+        for (item in result) {
+            if (item.type == "Income") {
+                calculatedIncome += item.amount
+            } else if (item.type == "Expense") {
+                calculatedExpense += item.amount
+            }
+        }
+
+        // Push the new math to the UI cards
+        _totalIncome.value = calculatedIncome
+        _totalExpenses.value = calculatedExpense
 
         // Push the final, filtered list to the screen
         filteredExpenses.value = result
