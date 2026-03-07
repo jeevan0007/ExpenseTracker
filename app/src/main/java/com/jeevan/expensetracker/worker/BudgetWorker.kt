@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
@@ -15,6 +16,7 @@ import com.jeevan.expensetracker.data.ExpenseDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
+import java.util.Calendar
 import java.util.Locale
 
 class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -27,17 +29,27 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val monthlyBudget = prefs.getFloat("monthly_budget", 0f).toDouble()
         if (monthlyBudget <= 0) return@withContext Result.success()
 
-        // 2. Calculate Total Expenses (This Month)
-        val db = ExpenseDatabase.getDatabase(context)
-        // Note: For simplicity, we are summing ALL expenses.
-        // Ideally, you'd filter by month, but this matches your current Dashboard logic.
-        val expenses = db.expenseDao().getAllExpensesSync()
-        val totalSpent = expenses.filter { it.type == "Expense" }.sumOf { it.amount }
+        // 2. Calculate Start of Current Month
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val startOfThisMonth = calendar.timeInMillis
 
-        // 3. Check Threshold (80%)
-        val percentage = (totalSpent / monthlyBudget) * 100
+        // 3. Fetch & Filter Expenses (Only THIS month's expenses)
+        val db = ExpenseDatabase.getDatabase(context)
+        val allExpenses = db.expenseDao().getAllExpensesSync()
+
+        val currentMonthSpent = allExpenses.filter {
+            it.type == "Expense" && it.date >= startOfThisMonth
+        }.sumOf { it.amount }
+
+        // 4. Check Threshold (80%)
+        val percentage = (currentMonthSpent / monthlyBudget) * 100
         if (percentage >= 80) {
-            sendNotification(context, totalSpent, monthlyBudget, percentage)
+            sendNotification(context, currentMonthSpent, monthlyBudget, percentage)
         }
 
         return@withContext Result.success()
@@ -49,7 +61,15 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
         // Create Channel (Required for Android 8+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Budget Alerts", NotificationManager.IMPORTANCE_HIGH)
+            val channel = NotificationChannel(
+                channelId,
+                "Budget Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts when you are nearing or exceeding your monthly budget"
+                enableLights(true)
+                lightColor = Color.RED
+            }
             manager.createNotificationChannel(channel)
         }
 
@@ -64,18 +84,32 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val spentStr = format.format(spent * rate)
         val limitStr = format.format(limit * rate)
 
-        // Open App on Click
-        val intent = Intent(context, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        // Open App on Click (Bulletproof intent flags)
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        val title = if (percent >= 100) "🚨 Budget Exceeded!" else "⚠️ Budget Warning"
-        val message = "You've spent $spentStr of your $limitStr limit."
+        // Dynamic Premium Styling
+        val isCritical = percent >= 100
+        val title = if (isCritical) "🚨 Budget Exceeded!" else "⚠️ Budget Warning"
+        val message = "You have spent $spentStr, which is ${String.format("%.1f", percent)}% of your $limitStr monthly limit."
+        val colorTint = if (isCritical) Color.parseColor("#D32F2F") else Color.parseColor("#FF9800")
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert) // Or your app icon
+            // It is highly recommended to replace this with your actual app icon: R.mipmap.ic_launcher_round
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(title)
             .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message)) // Enables expansion
+            .setColor(colorTint) // Tints the icon dynamically
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()

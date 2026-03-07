@@ -5,7 +5,6 @@ import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
-import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -64,8 +63,6 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
@@ -256,6 +253,31 @@ class MainActivity : AppCompatActivity() {
         // --- VIEW MODEL ---
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
 
+        // 🔥 DEFAULT TO 'THIS MONTH' ON STARTUP 🔥
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+        val startOfMonth = calendar.apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val endOfMonth = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+
+        // Tell the ViewModel to only load this month's data
+        expenseViewModel.setDateRangeFilter(startOfMonth, endOfMonth)
+
+        // Update the UI so the user knows what they are looking at
+        findViewById<Button>(R.id.btnDateFilter).text = "This Month"
+        tvDateHeader.text = "Showing: This Month"
+
+        // --- RECYCLER VIEW SETUP ---
         val recyclerView = findViewById<RecyclerView>(R.id.rvExpenses)
         adapter = ExpenseAdapter(
             onItemLongClick = { expense -> showDeleteDialog(expense) },
@@ -617,7 +639,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- SHAKE TO RESET LOGIC ---
     // --- SHAKE TO RESET LOGIC ---
     private fun resetToDefaults() {
         vibrateReset()
@@ -1025,7 +1046,10 @@ class MainActivity : AppCompatActivity() {
         val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
         val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
         val spinnerCategory = dialogView.findViewById<Spinner>(R.id.spinnerCategory)
-        val cbRecurring = dialogView.findViewById<CheckBox>(R.id.cbRecurring)
+
+        // 🔥 NEW: Grab the Recurrence Spinner instead of CheckBox
+        val spinnerRecurrence = dialogView.findViewById<Spinner>(R.id.spinnerRecurrence)
+
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
 
@@ -1036,11 +1060,18 @@ class MainActivity : AppCompatActivity() {
             showFullScreenReceipt(tempReceiptUri, null)
         }
 
+        // Setup Category Spinner
         val categories = resources.getStringArray(R.array.categories).toMutableList()
         categories.add("Salary"); categories.add("Automated")
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
+
+        // 🔥 NEW: Setup Recurrence Spinner
+        val recurrenceOptions = listOf("None", "Monthly", "Yearly")
+        val recurrenceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions)
+        recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerRecurrence.adapter = recurrenceAdapter
 
         val symbol = java.util.Currency.getInstance(activeCurrencyLocale).symbol
         etAmount.hint = "Amount ($symbol)"
@@ -1054,6 +1085,10 @@ class MainActivity : AppCompatActivity() {
             val description = etDescription.text.toString()
             val category = spinnerCategory.selectedItem.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
+
+            // Extract the new recurrence choice
+            val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
+            val isRecurringFlag = selectedRecurrence != "None"
 
             val rawInput = amountText.toDoubleOrNull()
             var hasError = false
@@ -1081,7 +1116,18 @@ class MainActivity : AppCompatActivity() {
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
             }
 
-            expenseViewModel.insert(Expense(amount = amountInInr, category = category, description = description, type = type, isRecurring = cbRecurring.isChecked, receiptPath = finalReceiptPath))
+            // Save the expense with the new Recurrence data
+            expenseViewModel.insert(
+                Expense(
+                    amount = amountInInr,
+                    category = category,
+                    description = description,
+                    type = type,
+                    isRecurring = isRecurringFlag,
+                    recurrenceType = selectedRecurrence, // Injecting "None", "Monthly", or "Yearly"
+                    receiptPath = finalReceiptPath
+                )
+            )
             triggerBalancePulse(type == "Income")
             dialog.dismiss()
 
@@ -1130,7 +1176,10 @@ class MainActivity : AppCompatActivity() {
         val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
         val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
         val spinnerCategory = dialogView.findViewById<Spinner>(R.id.spinnerCategory)
-        val cbRecurring = dialogView.findViewById<CheckBox>(R.id.cbRecurring)
+
+        // 🔥 NEW: Grab the Recurrence Spinner
+        val spinnerRecurrence = dialogView.findViewById<Spinner>(R.id.spinnerRecurrence)
+
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
 
@@ -1141,13 +1190,27 @@ class MainActivity : AppCompatActivity() {
             showFullScreenReceipt(tempReceiptUri, expense.receiptPath)
         }
 
+        // Setup Category Spinner
         val categories = resources.getStringArray(R.array.categories).toMutableList()
         categories.add("Salary"); categories.add("Automated")
         spinnerCategory.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
+        // 🔥 NEW: Setup Recurrence Spinner and PRE-SELECT saved value
+        val recurrenceOptions = listOf("None", "Monthly", "Yearly")
+        val recurrenceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions)
+        recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerRecurrence.adapter = recurrenceAdapter
+
+        val recIndex = recurrenceOptions.indexOf(expense.recurrenceType)
+        if (recIndex >= 0) {
+            spinnerRecurrence.setSelection(recIndex)
+        } else if (expense.isRecurring) {
+            // Fallback for older entries before we added the new type
+            spinnerRecurrence.setSelection(1) // Defaults to Monthly
+        }
+
         etAmount.setText(expense.amount.toString())
         etDescription.setText(expense.description)
-        cbRecurring.isChecked = expense.isRecurring
         radioGroupType.check(if (expense.type == "Income") R.id.radioIncome else R.id.radioExpense)
         categories.indexOf(expense.category).takeIf { it >= 0 }?.let { spinnerCategory.setSelection(it) }
 
@@ -1169,6 +1232,9 @@ class MainActivity : AppCompatActivity() {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
+
+            val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
+            val isRecurringFlag = selectedRecurrence != "None"
 
             val amount = amountText.toDoubleOrNull()
             var hasError = false
@@ -1195,7 +1261,18 @@ class MainActivity : AppCompatActivity() {
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
             }
 
-            expenseViewModel.update(expense.copy(amount = amount!!, category = spinnerCategory.selectedItem.toString(), description = description, type = type, isRecurring = cbRecurring.isChecked, receiptPath = finalReceiptPath))
+            // Update the expense with the edited Recurrence data
+            expenseViewModel.update(
+                expense.copy(
+                    amount = amount!!,
+                    category = spinnerCategory.selectedItem.toString(),
+                    description = description,
+                    type = type,
+                    isRecurring = isRecurringFlag,
+                    recurrenceType = selectedRecurrence,
+                    receiptPath = finalReceiptPath
+                )
+            )
             dialog.dismiss()
 
             if (type == "Expense") shouldCheckBudget = true

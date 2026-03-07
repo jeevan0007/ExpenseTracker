@@ -103,20 +103,30 @@
             android:inputType="textCapSentences"/>
     </com.google.android.material.textfield.TextInputLayout>
 
-    <com.google.android.material.checkbox.MaterialCheckBox
-        android:id="@+id/cbRecurring"
-        android:layout_width="match_parent"
+    <TextView
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="🔄 Repeats Monthly (Auto-add)"
-        android:layout_marginTop="12dp"
+        android:text="Recurrence"
+        android:textSize="12sp"
         android:textStyle="bold"
-        android:textColor="?android:attr/textColorPrimary"
-        app:buttonTint="?attr/colorPrimary"/>
+        android:textColor="?attr/colorPrimary"
+        android:layout_marginTop="16dp"
+        android:layout_marginStart="4dp"
+        android:layout_marginBottom="4dp"/>
+
+    <Spinner
+        android:id="@+id/spinnerRecurrence"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/spinner_background"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:spinnerMode="dropdown"/>
 
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="16dp"
         app:cardCornerRadius="16dp"
         app:cardElevation="0dp"
         app:cardBackgroundColor="@android:color/transparent"
