@@ -66,6 +66,11 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
+// 🔥 ML KIT IMPORTS
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var expenseViewModel: ExpenseViewModel
@@ -102,9 +107,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sensorManager: SensorManager
     private var shakeDetector: ShakeDetector? = null
 
-    // --- RECEIPT PHOTO STATE ---
+    // --- RECEIPT PHOTO STATE & ML KIT ---
     private var tempReceiptUri: android.net.Uri? = null
     private var currentReceiptPreview: ImageView? = null
+    private var activeAmountInput: EditText? = null // Remembers which box to type the AI data into
 
     // Pro-Level Biometric Engine variable
     private var authPrompt: BiometricPrompt? = null
@@ -121,7 +127,56 @@ class MainActivity : AppCompatActivity() {
                 animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(1.5f)).start()
             }
             vibratePhoneLight()
+
+            // 🔥 Trigger the Offline AI Scanner
+            processReceiptImage(it)
         }
+    }
+
+    // 🔥 THE ML KIT RECEIPT SCANNER ENGINE
+    private fun processReceiptImage(uri: android.net.Uri) {
+        Toast.makeText(this, "Scanning receipt...", Toast.LENGTH_SHORT).show()
+        try {
+            val image = InputImage.fromFilePath(this, uri)
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+            recognizer.process(image)
+                .addOnSuccessListener { visionText ->
+                    val extractedAmount = extractTotalAmount(visionText.text)
+                    if (extractedAmount != null && extractedAmount > 0) {
+                        activeAmountInput?.setText(extractedAmount.toString())
+                        vibratePhone()
+                        Toast.makeText(this, "Auto-filled: $extractedAmount", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "Could not find a clear total amount.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .addOnFailureListener { e ->
+                    e.printStackTrace()
+                    Toast.makeText(this, "Failed to scan receipt.", Toast.LENGTH_SHORT).show()
+                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun extractTotalAmount(text: String): Double? {
+        // Looks for standard price formats (e.g. 12.99, 1,234.56, 1234.56)
+        val regex = Regex("""\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d+\.\d{2}\b""")
+        val matches = regex.findAll(text)
+        var maxAmount = 0.0
+
+        for (match in matches) {
+            // Strip out commas so the computer can do the math
+            val cleanString = match.value.replace(",", "")
+            val value = cleanString.toDoubleOrNull() ?: 0.0
+
+            // Assume the largest monetary value on the receipt is the Total
+            if (value > maxAmount) {
+                maxAmount = value
+            }
+        }
+        return if (maxAmount > 0) maxAmount else null
     }
 
     private fun saveReceiptToInternalStorage(uri: android.net.Uri): String? {
@@ -173,19 +228,17 @@ class MainActivity : AppCompatActivity() {
         loadSavedTheme(sharedPref)
         loadSavedCurrency(sharedPref)
 
-        // --- LOAD STEALTH MODE ---
         isStealthMode = sharedPref.getBoolean("stealth_mode", false)
         val ivStealthToggle = findViewById<ImageView>(R.id.ivStealthToggle)
         ivStealthToggle.setImageResource(if (isStealthMode) android.R.drawable.ic_secure else android.R.drawable.ic_menu_view)
 
-        // 🔥 UNIFIED STEALTH TOGGLE
         applySquishPhysics(ivStealthToggle) {
             isStealthMode = !isStealthMode
             sharedPref.edit().putBoolean("stealth_mode", isStealthMode).apply()
 
             ivStealthToggle.animate().alpha(0f).setDuration(150).withEndAction {
                 ivStealthToggle.setImageResource(if (isStealthMode) android.R.drawable.ic_secure else android.R.drawable.ic_menu_view)
-                updateAllStealthUI() // <--- Forces everything to sync
+                updateAllStealthUI()
                 ivStealthToggle.animate().alpha(1f).setDuration(150).start()
             }.start()
         }
@@ -281,7 +334,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         adapter.updateCurrency(activeCurrencyRate, activeCurrencyLocale)
-        adapter.setStealthMode(isStealthMode) // 🔥 Force list to match saved state on launch
+        adapter.setStealthMode(isStealthMode)
 
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
@@ -434,7 +487,7 @@ class MainActivity : AppCompatActivity() {
             currentIncome = income ?: 0.0
             if (isStealthMode) {
                 findViewById<TextView>(R.id.tvIncomeAmount).text = "***.**"
-                oldIncomeAnimState = currentIncome // track silently
+                oldIncomeAnimState = currentIncome
             } else {
                 animateNumberRoll(findViewById<TextView>(R.id.tvIncomeAmount), oldIncomeAnimState, currentIncome)
                 oldIncomeAnimState = currentIncome
@@ -446,7 +499,7 @@ class MainActivity : AppCompatActivity() {
             currentExpense = expense ?: 0.0
             if (isStealthMode) {
                 findViewById<TextView>(R.id.tvExpenseAmount).text = "***.**"
-                oldExpenseAnimState = currentExpense // track silently
+                oldExpenseAnimState = currentExpense
             } else {
                 animateNumberRoll(findViewById<TextView>(R.id.tvExpenseAmount), oldExpenseAnimState, currentExpense)
                 oldExpenseAnimState = currentExpense
@@ -529,7 +582,6 @@ class MainActivity : AppCompatActivity() {
         checkAndRequestPermissions()
     }
 
-    // 🔥 THE MASTER STEALTH TOGGLE
     private fun updateAllStealthUI() {
         val tvIncome = findViewById<TextView>(R.id.tvIncomeAmount)
         val tvExpense = findViewById<TextView>(R.id.tvExpenseAmount)
@@ -540,7 +592,6 @@ class MainActivity : AppCompatActivity() {
             tvExpense.text = "***.**"
             tvBalance.text = "***.**"
         } else {
-            // Re-animate the actual money when turning off!
             if (isTravelModeActive) {
                 updateHeaderCurrency()
             } else {
@@ -550,7 +601,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Push the update to the recycler list instantly
         if (::adapter.isInitialized) {
             adapter.setStealthMode(isStealthMode)
         }
@@ -594,7 +644,6 @@ class MainActivity : AppCompatActivity() {
     private fun closeFabMenu() {
         if (!isFabExpanded) return
         isFabExpanded = false
-
         toggleGlassBlur(false)
 
         val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
@@ -1085,6 +1134,10 @@ class MainActivity : AppCompatActivity() {
         val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
         currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
         tempReceiptUri = null
+
+        // 🔥 Link the active text box so the AI knows where to type
+        activeAmountInput = etAmount
+
         currentReceiptPreview?.setOnClickListener {
             showFullScreenReceipt(tempReceiptUri, null)
         }
@@ -1207,6 +1260,10 @@ class MainActivity : AppCompatActivity() {
 
         currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
         tempReceiptUri = null
+
+        // 🔥 Link the active text box so the AI knows where to type
+        activeAmountInput = etAmount
+
         currentReceiptPreview?.setOnClickListener {
             showFullScreenReceipt(tempReceiptUri, expense.receiptPath)
         }

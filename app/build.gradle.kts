@@ -46,6 +46,8 @@ dependencies {
     // NEW: WorkManager for background automated tasks
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
+// Google ML Kit (Offline Text Recognition)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
