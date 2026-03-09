@@ -76,6 +76,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var expenseViewModel: ExpenseViewModel
     private lateinit var adapter: ExpenseAdapter
     private lateinit var lottieAnimationView: LottieAnimationView
+
+    private lateinit var tvPredictiveInsight: TextView
     private var monthlyBudget: Double = 0.0
 
     // Animation States
@@ -242,6 +244,7 @@ class MainActivity : AppCompatActivity() {
                 ivStealthToggle.animate().alpha(1f).setDuration(150).start()
             }.start()
         }
+        tvPredictiveInsight = findViewById(R.id.tvPredictiveInsight)
 
         monthlyBudget = sharedPref.getFloat("monthly_budget", 0f).toDouble()
 
@@ -506,6 +509,9 @@ class MainActivity : AppCompatActivity() {
             }
             updateBalance(findViewById(R.id.tvBalanceAmount))
 
+            // 🔥 Trigger the new Burn Rate math here!
+            updatePredictiveInsight()
+
             if (shouldCheckBudget && currentExpense > expenseBeforeAdd) {
                 checkBudgetStatus()
                 shouldCheckBudget = false
@@ -600,6 +606,9 @@ class MainActivity : AppCompatActivity() {
                 animateNumberRoll(tvBalance, 0.0, currentIncome - currentExpense)
             }
         }
+
+        // Hide or show the predictive text too!
+        updatePredictiveInsight()
 
         if (::adapter.isInitialized) {
             adapter.setStealthMode(isStealthMode)
@@ -1368,6 +1377,7 @@ class MainActivity : AppCompatActivity() {
             monthlyBudget = budget
             getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putFloat("monthly_budget", budget.toFloat()).apply()
             dialog.dismiss()
+            updatePredictiveInsight() // Update UI instantly
             checkBudgetStatus()
         }
         applySquishPhysics(dialogView.findViewById<Button>(R.id.btnCancelBudget)) { dialog.dismiss() }
@@ -1510,6 +1520,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun exportDataToCSV() {
+        // We will keep the function name the same so the FAB button doesn't break,
+        // but we are actually generating a Premium PDF now!
+
         val expenses = expenseViewModel.filteredExpenses.value
 
         if (expenses.isNullOrEmpty()) {
@@ -1517,69 +1530,37 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        Toast.makeText(this, "Generating Professional PDF...", Toast.LENGTH_SHORT).show()
+
         try {
-            val fileName = "ExpenseReport_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.csv"
-            val file = java.io.File(cacheDir, fileName)
-            val fileWriter = java.io.FileWriter(file)
+            // Call our new PDF Engine!
+            val pdfFile = com.jeevan.expensetracker.utils.PdfReportGenerator.generatePdf(
+                this,
+                expenses,
+                activeCurrencyRate,
+                activeCurrencyLocale
+            )
 
-            val sortedExpenses = expenses.sortedByDescending { it.date }
-            val groupedExpenses = sortedExpenses.groupBy { SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date(it.date)) }
+            if (pdfFile != null) {
+                // Get the URI for the file using FileProvider
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this,
+                    "${applicationContext.packageName}.provider",
+                    pdfFile
+                )
 
-            var grandTotalIncome = 0.0
-            var grandTotalExpense = 0.0
-
-            fileWriter.append("PROFESSIONAL EXPENSE LEDGER\n")
-            fileWriter.append("Generated on: ${SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(Date())}\n\n")
-
-            val rowDateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
-
-            for ((monthYear, monthExpenses) in groupedExpenses) {
-                fileWriter.append("=== $monthYear ===\n")
-                fileWriter.append("Date,Description,Category,Type,Amount(INR)\n")
-
-                var monthlyIncome = 0.0
-                var monthlyExpense = 0.0
-
-                for (expense in monthExpenses) {
-                    val dateStr = rowDateFormat.format(Date(expense.date))
-                    val formattedAmount = String.format(Locale.US, "%.2f", expense.amount)
-
-                    if (expense.type == "Income") {
-                        monthlyIncome += expense.amount
-                        grandTotalIncome += expense.amount
-                    } else {
-                        monthlyExpense += expense.amount
-                        grandTotalExpense += expense.amount
-                    }
-
-                    fileWriter.append("\"$dateStr\",\"${expense.description}\",\"${expense.category}\",\"${expense.type}\",$formattedAmount\n")
+                // Fire the share intent
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf" // 🔥 Switched from text/csv to application/pdf
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "Professional Expense Report")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-
-                val netSavings = monthlyIncome - monthlyExpense
-                fileWriter.append(",,,,\n")
-                fileWriter.append(",,,\"Total Income\",${String.format(Locale.US, "%.2f", monthlyIncome)}\n")
-                fileWriter.append(",,,\"Total Expense\",${String.format(Locale.US, "%.2f", monthlyExpense)}\n")
-                fileWriter.append(",,,\"Net Savings\",${String.format(Locale.US, "%.2f", netSavings)}\n")
-                fileWriter.append("\n\n")
+                startActivity(Intent.createChooser(shareIntent, "Save or Share PDF Report"))
+            } else {
+                Toast.makeText(this, "Failed to create PDF", Toast.LENGTH_SHORT).show()
             }
 
-            fileWriter.append("=== GRAND TOTALS ===\n")
-            fileWriter.append(",,,\"Overall Income\",${String.format(Locale.US, "%.2f", grandTotalIncome)}\n")
-            fileWriter.append(",,,\"Overall Expense\",${String.format(Locale.US, "%.2f", grandTotalExpense)}\n")
-            fileWriter.append(",,,\"Overall Balance\",${String.format(Locale.US, "%.2f", grandTotalIncome - grandTotalExpense)}\n")
-
-            fileWriter.flush()
-            fileWriter.close()
-
-            val uri = androidx.core.content.FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
-
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/csv"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Professional Expense Report")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(shareIntent, "Save or Share Pro Report"))
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -1635,6 +1616,69 @@ class MainActivity : AppCompatActivity() {
             findViewById<View>(R.id.appBarLayout).setRenderEffect(blurEffect)
             findViewById<View>(R.id.rvExpenses).setRenderEffect(blurEffect)
             findViewById<View>(R.id.layoutEmptyState).setRenderEffect(blurEffect)
+        }
+    }
+
+    // 🔥 ADVANCED PREDICTIVE ENGINE (BURN RATE)
+    private fun updatePredictiveInsight() {
+        if (monthlyBudget <= 0) {
+            tvPredictiveInsight.visibility = View.GONE
+            return
+        }
+
+        val calendar = Calendar.getInstance()
+        val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val currentDay = calendar.get(Calendar.DAY_OF_MONTH)
+        val daysRemaining = (daysInMonth - currentDay) + 1
+
+        val remainingBudget = monthlyBudget - currentExpense
+        tvPredictiveInsight.visibility = View.VISIBLE
+
+        if (isStealthMode) {
+            tvPredictiveInsight.text = "Financial Insight: Hidden"
+            tvPredictiveInsight.setTextColor(Color.parseColor("#80000000"))
+            return
+        }
+
+        val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
+
+        // STATE 1: Already broke the budget
+        if (remainingBudget < 0) {
+            val overage = abs(remainingBudget)
+            tvPredictiveInsight.text = "🚨 Budget Exceeded by ${format.format(overage * activeCurrencyRate)}!"
+            tvPredictiveInsight.setTextColor(Color.parseColor("#D32F2F")) // Deep Red
+            return
+        }
+
+        // Calculate Burn Rate Velocity
+        val effectiveDaysPassed = if (currentDay > 0) currentDay else 1
+        val averageDailySpend = currentExpense / effectiveDaysPassed
+        val safeDailySpend = remainingBudget / daysRemaining
+
+        // STATE 2: Perfect spending / Haven't spent much yet
+        if (averageDailySpend == 0.0) {
+            tvPredictiveInsight.text = "✨ Perfect! Safe to spend: ${format.format(safeDailySpend * activeCurrencyRate)} / day"
+            tvPredictiveInsight.setTextColor(Color.parseColor("#388E3C")) // Green
+            return
+        }
+
+        val projectedTotal = averageDailySpend * daysInMonth
+
+        // STATE 3: Burning money too fast (The Warning Engine)
+        if (projectedTotal > monthlyBudget) {
+            val daysUntilZero = remainingBudget / averageDailySpend
+            val daysLeftInt = kotlin.math.floor(daysUntilZero).toInt()
+
+            if (daysLeftInt <= 0) {
+                tvPredictiveInsight.text = "⚠️ Warning: Budget will empty today at this rate!"
+            } else {
+                tvPredictiveInsight.text = "⚠️ At this rate, budget empties in $daysLeftInt days!"
+            }
+            tvPredictiveInsight.setTextColor(Color.parseColor("#F57C00")) // Orange Warning
+        } else {
+            // STATE 4: On track
+            tvPredictiveInsight.text = "✅ On track! Safe to spend: ${format.format(safeDailySpend * activeCurrencyRate)} / day"
+            tvPredictiveInsight.setTextColor(Color.parseColor("#388E3C")) // Green
         }
     }
 }
