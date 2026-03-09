@@ -29,7 +29,10 @@ class ExpenseAdapter(
     private var exchangeRate = 1.0
     private var targetLocale = Locale("en", "IN")
 
-    // 🔥 NEW: Smart Cache so we don't lag the phone while scrolling!
+    // 🔥 STEALTH MODE ENGINE
+    private var isStealthMode = false
+
+    // Smart Cache so we don't lag the phone while scrolling!
     private var cachedCategories: Map<String, String>? = null
 
     class ExpenseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -38,7 +41,7 @@ class ExpenseAdapter(
         val tvDescription: TextView = itemView.findViewById(R.id.tvDescription)
         val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         val tvAmount: TextView = itemView.findViewById(R.id.tvAmount)
-        val ivReceiptIcon: ImageView = itemView.findViewById(R.id.ivReceiptIcon)
+        val badgeReceipt: View = itemView.findViewById(R.id.badgeReceipt)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ExpenseViewHolder {
@@ -50,13 +53,11 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
-        // 🔥 NEW: Fetch from cache, or load it instantly if the cache is empty
         if (cachedCategories == null) {
             cachedCategories = CategoryManager.getCategories(holder.itemView.context)
                 .associate { it.name to it.emoji }
         }
 
-        // Grab the custom emoji, or default to a money bag if they deleted it
         val emoji = cachedCategories!![currentExpense.category] ?: "💰"
 
         holder.tvCategoryIcon.text = emoji
@@ -72,11 +73,12 @@ class ExpenseAdapter(
         val currencyFormat = NumberFormat.getCurrencyInstance(targetLocale)
         val formattedAmount = currencyFormat.format(convertedAmount)
 
+        // 🔥 STEALTH MODE CHECK: Hide the numbers if locked!
         if (currentExpense.type == "Income") {
-            holder.tvAmount.text = "+ $formattedAmount"
+            holder.tvAmount.text = if (isStealthMode) "+ ***.**" else "+ $formattedAmount"
             holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
         } else {
-            holder.tvAmount.text = "- $formattedAmount"
+            holder.tvAmount.text = if (isStealthMode) "- ***.**" else "- $formattedAmount"
             holder.tvAmount.setTextColor(Color.parseColor("#D32F2F"))
         }
 
@@ -87,14 +89,12 @@ class ExpenseAdapter(
             holder.tvDate.text = "Invalid Date"
         }
 
-        // --- RECEIPT VISIBILITY LOGIC ---
         if (currentExpense.receiptPath != null) {
-            holder.ivReceiptIcon.visibility = View.VISIBLE
+            holder.badgeReceipt.visibility = View.VISIBLE
         } else {
-            holder.ivReceiptIcon.visibility = View.GONE
+            holder.badgeReceipt.visibility = View.GONE
         }
 
-        // Trigger the scroll animation engine
         setCascadeAnimation(holder.itemView, position)
 
         val gestureDetector = GestureDetector(holder.itemView.context, object : GestureDetector.SimpleOnGestureListener() {
@@ -124,35 +124,27 @@ class ExpenseAdapter(
         }
     }
 
-    // --- UPGRADED SCROLL ANIMATION ENGINE ---
     private fun setCascadeAnimation(viewToAnimate: View, position: Int) {
-        // 1. Cancel any leftover animations from recycling
         viewToAnimate.animate().cancel()
 
         if (position > lastPosition) {
-            // Scrolling DOWN: Slide up and fade in
             viewToAnimate.translationY = 150f
             viewToAnimate.alpha = 0f
-
             viewToAnimate.animate()
                 .translationY(0f)
                 .alpha(1f)
                 .setDuration(350)
                 .setInterpolator(DecelerateInterpolator(1.5f))
                 .start()
-
             lastPosition = position
         } else {
-            // Scrolling UP: Snap instantly into place to prevent ghosting
             viewToAnimate.translationY = 0f
             viewToAnimate.alpha = 1f
         }
     }
 
-    // --- CRITICAL RECYCLING FIX ---
     override fun onViewDetachedFromWindow(holder: ExpenseViewHolder) {
         super.onViewDetachedFromWindow(holder)
-        // If the view goes off-screen mid-animation, kill the animation and reset it!
         holder.itemView.animate().cancel()
         holder.itemView.alpha = 1f
         holder.itemView.translationY = 0f
@@ -161,7 +153,7 @@ class ExpenseAdapter(
     fun setExpenses(expenses: List<Expense>) {
         this.expenses = expenses
         this.lastPosition = -1
-        this.cachedCategories = null // 🔥 Force a fresh emoji pull when the data updates!
+        this.cachedCategories = null
         notifyDataSetChanged()
     }
 
@@ -175,5 +167,13 @@ class ExpenseAdapter(
         this.exchangeRate = rate
         this.targetLocale = locale
         notifyDataSetChanged()
+    }
+
+    // 🔥 INSTANT STEALTH REFRESH
+    fun setStealthMode(isStealth: Boolean) {
+        if (this.isStealthMode != isStealth) {
+            this.isStealthMode = isStealth
+            notifyDataSetChanged()
+        }
     }
 }

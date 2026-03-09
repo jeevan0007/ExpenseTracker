@@ -95,6 +95,9 @@ class MainActivity : AppCompatActivity() {
     private var activeCurrencyLocale = Locale("en", "IN")
     private var isTravelModeActive = false
 
+    // --- STEALTH MODE ---
+    private var isStealthMode = false
+
     // --- SENSOR (SHAKE) ---
     private lateinit var sensorManager: SensorManager
     private var shakeDetector: ShakeDetector? = null
@@ -113,7 +116,6 @@ class MainActivity : AppCompatActivity() {
             currentReceiptPreview?.apply {
                 visibility = View.VISIBLE
                 setImageURI(it)
-                // A nice pop animation when the photo attaches
                 scaleX = 0f
                 scaleY = 0f
                 animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(1.5f)).start()
@@ -122,19 +124,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Pro-Level Secure Storage: Copies the gallery photo into the app's hidden internal vault
     private fun saveReceiptToInternalStorage(uri: android.net.Uri): String? {
         return try {
             val inputStream = contentResolver.openInputStream(uri) ?: return null
             val fileName = "receipt_${System.currentTimeMillis()}.jpg"
             val file = java.io.File(filesDir, fileName)
             val outputStream = java.io.FileOutputStream(file)
-
             inputStream.copyTo(outputStream)
-
             inputStream.close()
             outputStream.close()
-
             file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()
@@ -142,57 +140,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- PRO-LEVEL SESSION TRACKER ---
     companion object {
         var isSessionUnlocked = false
         var backgroundedTime = 0L
-        var isNavigatingInternally = false // 🔥 Our hallway pass
+        var isNavigatingInternally = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 1. Install the Splash Screen BEFORE super.onCreate!
         installSplashScreen()
-
-        // 2. Enable Edge-to-Edge immersive mode!
         enableEdgeToEdge()
-
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 3. Set up Window Insets to protect UI from camera notch & swipe bar
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.drawerLayout)) { _, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-
-            // Push Drawer Button down
             val btnOpenDrawer = findViewById<ImageView>(R.id.btnOpenDrawer)
             val drawerParams = btnOpenDrawer.layoutParams as ViewGroup.MarginLayoutParams
             drawerParams.topMargin = systemBars.top + dpToPx(16)
             btnOpenDrawer.layoutParams = drawerParams
 
-            // Push Main FAB up
             val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
             val fabParams = fabMain.layoutParams as ViewGroup.MarginLayoutParams
             fabParams.bottomMargin = systemBars.bottom + dpToPx(24)
             fabMain.layoutParams = fabParams
 
-            // Pad RecyclerView so last item isn't cut off
             val rvExpenses = findViewById<RecyclerView>(R.id.rvExpenses)
             rvExpenses.setPadding(0, 0, 0, systemBars.bottom + dpToPx(80))
-
             insets
         }
 
-        // 1. LOAD SAVED THEME & CURRENCY IMMEDIATELY
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         loadSavedTheme(sharedPref)
         loadSavedCurrency(sharedPref)
+
+        // --- LOAD STEALTH MODE ---
+        isStealthMode = sharedPref.getBoolean("stealth_mode", false)
+        val ivStealthToggle = findViewById<ImageView>(R.id.ivStealthToggle)
+        ivStealthToggle.setImageResource(if (isStealthMode) android.R.drawable.ic_secure else android.R.drawable.ic_menu_view)
+
+        // 🔥 UNIFIED STEALTH TOGGLE
+        applySquishPhysics(ivStealthToggle) {
+            isStealthMode = !isStealthMode
+            sharedPref.edit().putBoolean("stealth_mode", isStealthMode).apply()
+
+            ivStealthToggle.animate().alpha(0f).setDuration(150).withEndAction {
+                ivStealthToggle.setImageResource(if (isStealthMode) android.R.drawable.ic_secure else android.R.drawable.ic_menu_view)
+                updateAllStealthUI() // <--- Forces everything to sync
+                ivStealthToggle.animate().alpha(1f).setDuration(150).start()
+            }.start()
+        }
 
         monthlyBudget = sharedPref.getFloat("monthly_budget", 0f).toDouble()
 
         tvDateHeader = findViewById(R.id.tvDateHeader)
         lottieAnimationView = findViewById(R.id.lottieAnimationView)
 
-        // --- NAVIGATION DRAWER SETUP ---
         val drawerLayout = findViewById<DrawerLayout>(R.id.drawerLayout)
         val navView = findViewById<NavigationView>(R.id.navView)
 
@@ -207,34 +209,26 @@ class MainActivity : AppCompatActivity() {
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_recycle_bin -> {
-                    isNavigatingInternally = true // 🔥 Give the pass!
+                    isNavigatingInternally = true
                     val intent = Intent(this, RecycleBinActivity::class.java)
                     startActivity(intent)
                     overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_settings -> {
-                    // 🔥 Give it the hallway pass so the app doesn't lock!
                     isNavigatingInternally = true
-
-                    // Open our brand new Category Settings screen
                     val intent = Intent(this@MainActivity, CategorySettingsActivity::class.java)
                     startActivity(intent)
                     overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
-
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
             }
             true
         }
 
-        // --- SHAKE DETECTOR SETUP ---
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        shakeDetector = ShakeDetector {
-            resetToDefaults()
-        }
+        shakeDetector = ShakeDetector { resetToDefaults() }
 
-        // --- BIOMETRIC LOCK UI ---
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
         val btnUnlockScreen = findViewById<Button>(R.id.btnUnlockScreen)
         val isAppLockEnabled = sharedPref.getBoolean("app_lock_enabled", false)
@@ -246,11 +240,8 @@ class MainActivity : AppCompatActivity() {
             lockedOverlay.visibility = View.GONE
         }
 
-        btnUnlockScreen.setOnClickListener {
-            launchBiometricLock(lockedOverlay)
-        }
+        btnUnlockScreen.setOnClickListener { launchBiometricLock(lockedOverlay) }
 
-        // --- WORK MANAGER ---
         val workRequest = PeriodicWorkRequestBuilder<RecurringExpenseWorker>(24, TimeUnit.HOURS).build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("RecurringExpenseWork", ExistingPeriodicWorkPolicy.KEEP, workRequest)
 
@@ -260,10 +251,8 @@ class MainActivity : AppCompatActivity() {
         val cleanerRequest = PeriodicWorkRequestBuilder<com.jeevan.expensetracker.worker.RecycleBinWorker>(1, TimeUnit.DAYS).build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("RecycleBinCleaner", ExistingPeriodicWorkPolicy.KEEP, cleanerRequest)
 
-        // --- VIEW MODEL ---
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
 
-        // 🔥 DEFAULT TO 'THIS MONTH' ON STARTUP 🔥
         val calendar = Calendar.getInstance()
         calendar.set(Calendar.DAY_OF_MONTH, 1)
         val startOfMonth = calendar.apply {
@@ -280,40 +269,33 @@ class MainActivity : AppCompatActivity() {
             set(Calendar.MILLISECOND, 999)
         }.timeInMillis
 
-        // Tell the ViewModel to only load this month's data
         expenseViewModel.setDateRangeFilter(startOfMonth, endOfMonth)
 
-        // Update the UI so the user knows what they are looking at
         findViewById<Button>(R.id.btnDateFilter).text = "This Month"
         tvDateHeader.text = "Showing: This Month"
 
-        // --- RECYCLER VIEW SETUP ---
         val recyclerView = findViewById<RecyclerView>(R.id.rvExpenses)
         adapter = ExpenseAdapter(
             onItemLongClick = { expense -> showDeleteDialog(expense) },
             onItemClick = { expense -> showEditDialog(expense) }
         )
-        // APPLY SAVED CURRENCY TO ADAPTER NOW
+
         adapter.updateCurrency(activeCurrencyRate, activeCurrencyLocale)
+        adapter.setStealthMode(isStealthMode) // 🔥 Force list to match saved state on launch
 
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
-        // 🔥 SMART FAB SCROLLING ENGINE 🔥
+
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 super.onScrollStateChanged(recyclerView, newState)
-                // If the user touches the list to scroll, instantly auto-close the premium FAB menu
                 if (newState == RecyclerView.SCROLL_STATE_DRAGGING && isFabExpanded) {
                     closeFabMenu()
                 }
             }
-
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 super.onScrolled(recyclerView, dx, dy)
                 val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
-
-                // dy > 0 means scrolling down the list. dy < 0 means scrolling back up.
-                // We use 10 and -10 as a buffer so it doesn't glitch on tiny accidental thumb twitches.
                 if (dy > 10 && fabMain.isShown) {
                     fabMain.hide()
                 } else if (dy < -10 && !fabMain.isShown) {
@@ -322,7 +304,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // --- PREMIUM SWIPE TO DELETE ---
         val swipeCallback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
             override fun onMove(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
                 return false
@@ -335,16 +316,7 @@ class MainActivity : AppCompatActivity() {
                 showDeleteDialog(expenseToDelete, position)
             }
 
-            // The Buttery Smooth "Reveal" Animation
-            override fun onChildDraw(
-                c: android.graphics.Canvas,
-                recyclerView: RecyclerView,
-                viewHolder: RecyclerView.ViewHolder,
-                dX: Float,
-                dY: Float,
-                actionState: Int,
-                isCurrentlyActive: Boolean
-            ) {
+            override fun onChildDraw(c: android.graphics.Canvas, recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, dX: Float, dY: Float, actionState: Int, isCurrentlyActive: Boolean) {
                 val itemView = viewHolder.itemView
                 if (dX != 0f) {
                     val swipeProgress = Math.min(Math.abs(dX) / itemView.width.toFloat(), 1f)
@@ -404,7 +376,6 @@ class MainActivity : AppCompatActivity() {
         val itemTouchHelper = ItemTouchHelper(swipeCallback)
         itemTouchHelper.attachToRecyclerView(recyclerView)
 
-        // --- SEARCH ---
         val etSearch = findViewById<EditText>(R.id.etSearch)
         etSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -414,7 +385,6 @@ class MainActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        // --- CATEGORY FILTER (Setup just the listener here, list is populated in onResume) ---
         val spinnerCategoryFilter = findViewById<Spinner>(R.id.spinnerCategoryFilter)
         spinnerCategoryFilter.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -425,7 +395,6 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // --- OBSERVERS ---
         val tvBalanceAmount = findViewById<TextView>(R.id.tvBalanceAmount)
         val tvIncomeAmount = findViewById<TextView>(R.id.tvIncomeAmount)
         val tvExpenseAmount = findViewById<TextView>(R.id.tvExpenseAmount)
@@ -452,28 +421,37 @@ class MainActivity : AppCompatActivity() {
                 rvExpensesView.visibility = View.VISIBLE
                 layoutEmptyState.visibility = View.GONE
 
-                // --- CASCADING ANIMATION TRIGGER ---
                 val context = rvExpensesView.context
                 val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(context, R.anim.layout_anim_cascade)
                 rvExpensesView.layoutAnimation = controller
 
                 adapter.setExpenses(expenses)
-                rvExpensesView.scheduleLayoutAnimation() // Forces the cascade to play!
+                rvExpensesView.scheduleLayoutAnimation()
             }
         }
 
         expenseViewModel.totalIncome.observe(this) { income ->
             currentIncome = income ?: 0.0
-            animateNumberRoll(tvIncomeAmount, oldIncomeAnimState, currentIncome)
-            oldIncomeAnimState = currentIncome
-            updateBalance(tvBalanceAmount)
+            if (isStealthMode) {
+                findViewById<TextView>(R.id.tvIncomeAmount).text = "***.**"
+                oldIncomeAnimState = currentIncome // track silently
+            } else {
+                animateNumberRoll(findViewById<TextView>(R.id.tvIncomeAmount), oldIncomeAnimState, currentIncome)
+                oldIncomeAnimState = currentIncome
+            }
+            updateBalance(findViewById(R.id.tvBalanceAmount))
         }
 
         expenseViewModel.totalExpenses.observe(this) { expense ->
             currentExpense = expense ?: 0.0
-            animateNumberRoll(tvExpenseAmount, oldExpenseAnimState, currentExpense)
-            oldExpenseAnimState = currentExpense
-            updateBalance(tvBalanceAmount)
+            if (isStealthMode) {
+                findViewById<TextView>(R.id.tvExpenseAmount).text = "***.**"
+                oldExpenseAnimState = currentExpense // track silently
+            } else {
+                animateNumberRoll(findViewById<TextView>(R.id.tvExpenseAmount), oldExpenseAnimState, currentExpense)
+                oldExpenseAnimState = currentExpense
+            }
+            updateBalance(findViewById(R.id.tvBalanceAmount))
 
             if (shouldCheckBudget && currentExpense > expenseBeforeAdd) {
                 checkBudgetStatus()
@@ -486,7 +464,6 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        // --- PREMIUM FAB SETUP ---
         setupPremiumFab()
 
         val fabTravelMode = findViewById<FloatingActionButton>(R.id.fabTravelMode)
@@ -530,7 +507,7 @@ class MainActivity : AppCompatActivity() {
         applySquishPhysics(findViewById<Button>(R.id.btnDateFilter)) { showDateFilterDialog() }
 
         applySquishPhysics(findViewById<Button>(R.id.btnViewCharts)) {
-            isNavigatingInternally = true // 🔥 Give the pass!
+            isNavigatingInternally = true
             val intent = Intent(this, ChartsActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
@@ -552,6 +529,33 @@ class MainActivity : AppCompatActivity() {
         checkAndRequestPermissions()
     }
 
+    // 🔥 THE MASTER STEALTH TOGGLE
+    private fun updateAllStealthUI() {
+        val tvIncome = findViewById<TextView>(R.id.tvIncomeAmount)
+        val tvExpense = findViewById<TextView>(R.id.tvExpenseAmount)
+        val tvBalance = findViewById<TextView>(R.id.tvBalanceAmount)
+
+        if (isStealthMode) {
+            tvIncome.text = "***.**"
+            tvExpense.text = "***.**"
+            tvBalance.text = "***.**"
+        } else {
+            // Re-animate the actual money when turning off!
+            if (isTravelModeActive) {
+                updateHeaderCurrency()
+            } else {
+                animateNumberRoll(tvIncome, 0.0, currentIncome)
+                animateNumberRoll(tvExpense, 0.0, currentExpense)
+                animateNumberRoll(tvBalance, 0.0, currentIncome - currentExpense)
+            }
+        }
+
+        // Push the update to the recycler list instantly
+        if (::adapter.isInitialized) {
+            adapter.setStealthMode(isStealthMode)
+        }
+    }
+
     private fun setupPremiumFab() {
         val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
         val dimOverlay = findViewById<View>(R.id.fabDimOverlay)
@@ -563,7 +567,7 @@ class MainActivity : AppCompatActivity() {
             isFabExpanded = !isFabExpanded
             vibratePhoneLight()
             if (isFabExpanded) {
-                toggleGlassBlur(true) // <--- GLASS BLUR ENABLED
+                toggleGlassBlur(true)
                 dimOverlay.visibility = View.VISIBLE
                 dimOverlay.animate().alpha(1f).setDuration(200).start()
                 fabMain.animate().rotation(135f).setDuration(250).start()
@@ -591,7 +595,7 @@ class MainActivity : AppCompatActivity() {
         if (!isFabExpanded) return
         isFabExpanded = false
 
-        toggleGlassBlur(false) // <--- GLASS BLUR DISABLED
+        toggleGlassBlur(false)
 
         val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
         val dimOverlay = findViewById<View>(R.id.fabDimOverlay)
@@ -615,52 +619,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- TRUE BACKGROUND LIFECYCLE TRACKING ---
     override fun onStart() {
         super.onStart()
-        isNavigatingInternally = false // 🔥 Reset the flag now that we are back
+        isNavigatingInternally = false
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         val isAppLockEnabled = sharedPref.getBoolean("app_lock_enabled", false)
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
 
-        // 1. Check if we were fully minimized for more than 3 seconds
         if (backgroundedTime > 0 && (System.currentTimeMillis() - backgroundedTime) > 3000) {
             isSessionUnlocked = false
         }
-        backgroundedTime = 0L // Reset the timer immediately
+        backgroundedTime = 0L
 
-        // 2. Apply Lock UI
         if (isAppLockEnabled && !isSessionUnlocked) {
             lockedOverlay.visibility = View.VISIBLE
             lockedOverlay.alpha = 1f
-            toggleGlassBlur(true) // <--- GLASS BLUR ENABLED
-
-            // Post delay guarantees the layout is fully drawn before Samsung's dialog intercepts it
-            lockedOverlay.postDelayed({
-                launchBiometricLock(lockedOverlay)
-            }, 300)
+            toggleGlassBlur(true)
+            lockedOverlay.postDelayed({ launchBiometricLock(lockedOverlay) }, 300)
         } else {
             lockedOverlay.visibility = View.GONE
-            toggleGlassBlur(false) // <--- GLASS BLUR DISABLED
+            toggleGlassBlur(false)
         }
     }
 
     override fun onStop() {
         super.onStop()
-        // 🔥 Only stamp the time if we are actually leaving the app to the home screen
         if (!isNavigatingInternally) {
             backgroundedTime = System.currentTimeMillis()
         }
     }
 
-    // --- SENSOR LIFECYCLE & DYNAMIC DROPDOWN REFRESH ---
     override fun onResume() {
         super.onResume()
         shakeDetector?.let {
             sensorManager.registerListener(it, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_UI)
         }
 
-        // 🔥 NEW: Instantly refresh the Dashboard Category Filter when returning from Settings!
         val spinnerCategoryFilter = findViewById<Spinner>(R.id.spinnerCategoryFilter)
         val filterCategories = mutableListOf("All Categories").apply {
             addAll(CategoryManager.getCategories(this@MainActivity).map { it.name })
@@ -669,7 +663,6 @@ class MainActivity : AppCompatActivity() {
         val filterAdapter = ArrayAdapter(this, R.layout.spinner_item, filterCategories)
         filterAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
 
-        // Keep the user's current filter selection if it still exists
         val currentSelection = spinnerCategoryFilter.selectedItem?.toString()
         spinnerCategoryFilter.adapter = filterAdapter
         val index = filterCategories.indexOf(currentSelection)
@@ -678,29 +671,18 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        shakeDetector?.let {
-            sensorManager.unregisterListener(it)
-        }
+        shakeDetector?.let { sensorManager.unregisterListener(it) }
     }
 
-    // --- SHAKE TO RESET LOGIC ---
     private fun resetToDefaults() {
         vibrateReset()
         Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
-
-        // 1. Reset Currency
         setCurrency(1.0, Locale("en", "IN"), false)
-
-        // 2. Reset Search
         expenseViewModel.setSearchQuery("")
         findViewById<EditText>(R.id.etSearch).setText("")
-
-        // 3. Reset Date Filter UI & Data
         expenseViewModel.clearDateFilter()
         tvDateHeader.text = "Showing: All Time"
         findViewById<Button>(R.id.btnDateFilter).text = "All Time"
-
-        // 4. Reset Category Filter UI & Data
         expenseViewModel.setCategoryFilter("All")
         findViewById<Spinner>(R.id.spinnerCategoryFilter).setSelection(0)
     }
@@ -771,9 +753,15 @@ class MainActivity : AppCompatActivity() {
         val dispIncome = currentIncome * activeCurrencyRate
         val dispExpense = currentExpense * activeCurrencyRate
 
-        tvBalance.text = format.format(dispBalance)
-        tvIncome.text = format.format(dispIncome)
-        tvExpense.text = format.format(dispExpense)
+        if (isStealthMode) {
+            tvBalance.text = "***.**"
+            tvIncome.text = "***.**"
+            tvExpense.text = "***.**"
+        } else {
+            tvBalance.text = format.format(dispBalance)
+            tvIncome.text = format.format(dispIncome)
+            tvExpense.text = format.format(dispExpense)
+        }
     }
 
     private fun triggerSecretCatMode() {
@@ -799,9 +787,7 @@ class MainActivity : AppCompatActivity() {
 
         val flicker = ValueAnimator.ofFloat(0f, 0.85f, 0.2f, 0.85f, 0.9f)
         flicker.duration = 400
-        flicker.addUpdateListener { animation ->
-            tempOverlay.alpha = animation.animatedValue as Float
-        }
+        flicker.addUpdateListener { animation -> tempOverlay.alpha = animation.animatedValue as Float }
         flicker.start()
 
         tempAnimationView.addAnimatorListener(object : AnimatorListenerAdapter() {
@@ -873,7 +859,6 @@ class MainActivity : AppCompatActivity() {
                 vibratePhone()
                 shakeHeaderCard()
                 lottieAnimationView.pauseAnimation()
-
                 lottieAnimationView.postDelayed({
                     lottieAnimationView.resumeAnimation()
                     lottieAnimationView.animate().alpha(0f).setDuration(500).withEndAction { lottieAnimationView.visibility = View.GONE }.start()
@@ -920,11 +905,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBalance(tvBalance: TextView) {
         val newBalance = currentIncome - currentExpense
-        if (isTravelModeActive) {
-            updateHeaderCurrency()
+        if (isStealthMode) {
+            tvBalance.text = "***.**"
+            oldBalanceAnimState = newBalance // keep tracking silently
         } else {
-            animateNumberRoll(tvBalance, oldBalanceAnimState, newBalance)
-            oldBalanceAnimState = newBalance
+            if (isTravelModeActive) {
+                updateHeaderCurrency()
+            } else {
+                animateNumberRoll(tvBalance, oldBalanceAnimState, newBalance)
+                oldBalanceAnimState = newBalance
+            }
         }
     }
 
@@ -992,7 +982,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchBiometricLock(overlay: View) {
-        // Cancel any leftover prompts to prevent Android from blocking them
         authPrompt?.cancelAuthentication()
 
         val executor = ContextCompat.getMainExecutor(this)
@@ -1005,7 +994,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
                     isSessionUnlocked = true
-                    toggleGlassBlur(false) // <--- GLASS BLUR DISABLED ON UNLOCK
+                    toggleGlassBlur(false)
                     overlay.animate().alpha(0f).setDuration(400).withEndAction {
                         overlay.visibility = View.GONE
                     }.start()
@@ -1090,13 +1079,9 @@ class MainActivity : AppCompatActivity() {
         val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
         val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
         val spinnerCategory = dialogView.findViewById<Spinner>(R.id.spinnerCategory)
-
-        // 🔥 NEW: Grab the Recurrence Spinner instead of CheckBox
         val spinnerRecurrence = dialogView.findViewById<Spinner>(R.id.spinnerRecurrence)
-
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
-
         val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
         currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
         tempReceiptUri = null
@@ -1104,13 +1089,11 @@ class MainActivity : AppCompatActivity() {
             showFullScreenReceipt(tempReceiptUri, null)
         }
 
-        // 🔥 FIXED: Setup Category Spinner dynamically
         val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
 
-        // 🔥 NEW: Setup Recurrence Spinner
         val recurrenceOptions = listOf("None", "Monthly", "Yearly")
         val recurrenceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions)
         recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -1129,8 +1112,6 @@ class MainActivity : AppCompatActivity() {
             val description = etDescription.text.toString()
             val category = spinnerCategory.selectedItem.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
-
-            // Extract the new recurrence choice
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
             val isRecurringFlag = selectedRecurrence != "None"
 
@@ -1160,7 +1141,6 @@ class MainActivity : AppCompatActivity() {
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
             }
 
-            // Save the expense with the new Recurrence data
             expenseViewModel.insert(
                 Expense(
                     amount = amountInInr,
@@ -1168,7 +1148,7 @@ class MainActivity : AppCompatActivity() {
                     description = description,
                     type = type,
                     isRecurring = isRecurringFlag,
-                    recurrenceType = selectedRecurrence, // Injecting "None", "Monthly", or "Yearly"
+                    recurrenceType = selectedRecurrence,
                     receiptPath = finalReceiptPath
                 )
             )
@@ -1220,25 +1200,20 @@ class MainActivity : AppCompatActivity() {
         val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
         val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
         val spinnerCategory = dialogView.findViewById<Spinner>(R.id.spinnerCategory)
-
-        // 🔥 NEW: Grab the Recurrence Spinner
         val spinnerRecurrence = dialogView.findViewById<Spinner>(R.id.spinnerRecurrence)
-
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
-
         val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
+
         currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
         tempReceiptUri = null
         currentReceiptPreview?.setOnClickListener {
             showFullScreenReceipt(tempReceiptUri, expense.receiptPath)
         }
 
-        // 🔥 FIXED: Setup Category Spinner dynamically
         val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
         spinnerCategory.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
-        // 🔥 NEW: Setup Recurrence Spinner and PRE-SELECT saved value
         val recurrenceOptions = listOf("None", "Monthly", "Yearly")
         val recurrenceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions)
         recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -1248,8 +1223,7 @@ class MainActivity : AppCompatActivity() {
         if (recIndex >= 0) {
             spinnerRecurrence.setSelection(recIndex)
         } else if (expense.isRecurring) {
-            // Fallback for older entries before we added the new type
-            spinnerRecurrence.setSelection(1) // Defaults to Monthly
+            spinnerRecurrence.setSelection(1)
         }
 
         etAmount.setText(expense.amount.toString())
@@ -1276,7 +1250,6 @@ class MainActivity : AppCompatActivity() {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
-
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
             val isRecurringFlag = selectedRecurrence != "None"
 
@@ -1305,7 +1278,6 @@ class MainActivity : AppCompatActivity() {
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
             }
 
-            // Update the expense with the edited Recurrence data
             expenseViewModel.update(
                 expense.copy(
                     amount = amount!!,
@@ -1347,7 +1319,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkBudgetStatus() {
         if (monthlyBudget <= 0) return
-
         val percentage = (currentExpense / monthlyBudget) * 100
 
         if (percentage >= 80) {
@@ -1381,11 +1352,7 @@ class MainActivity : AppCompatActivity() {
             tvSpent.setTextColor(color)
             tvLimit.text = "Limit: ${format.format(monthlyBudget * activeCurrencyRate)}"
 
-            if (isCritical) {
-                btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
-            } else {
-                btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
-            }
+            btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
 
             applySquishPhysics(btnIgnore) { dialog.dismiss() }
             applySquishPhysics(btnFixBudget) {
@@ -1424,7 +1391,6 @@ class MainActivity : AppCompatActivity() {
                     calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                     val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
                     val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
-
                     expenseViewModel.setDateRangeFilter(start, end)
                     findViewById<Button>(R.id.btnDateFilter).text = "This Week"
                     tvDateHeader.text = "Showing: This Week (Mon - Today)"
@@ -1441,10 +1407,8 @@ class MainActivity : AppCompatActivity() {
                     calendar.set(Calendar.DAY_OF_MONTH, 1)
                     calendar.add(Calendar.MONTH, -1)
                     val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
-
                     calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMaximum(Calendar.DAY_OF_MONTH))
                     val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
-
                     expenseViewModel.setDateRangeFilter(start, end)
                     findViewById<Button>(R.id.btnDateFilter).text = "Last Month"
                     tvDateHeader.text = "Showing: Last Month"
@@ -1604,16 +1568,13 @@ class MainActivity : AppCompatActivity() {
         shake.start()
     }
 
-    // --- TRUE GLASS BLUR ENGINE (Android 12+) ---
     private fun toggleGlassBlur(enable: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val blurEffect = if (enable) {
-                // 40f creates a heavy, premium frosted glass look
                 android.graphics.RenderEffect.createBlurEffect(40f, 40f, android.graphics.Shader.TileMode.CLAMP)
             } else {
                 null
             }
-            // Blur the header and the list
             findViewById<View>(R.id.appBarLayout).setRenderEffect(blurEffect)
             findViewById<View>(R.id.rvExpenses).setRenderEffect(blurEffect)
             findViewById<View>(R.id.layoutEmptyState).setRenderEffect(blurEffect)
