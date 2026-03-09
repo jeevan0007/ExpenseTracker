@@ -170,11 +170,16 @@ class ChartsActivity : AppCompatActivity() {
         val chartItems = ArrayList<ChartItem>()
         val palette = getChartColors()
 
+        // 🔥 NEW: Fetch the dynamic categories right before drawing the chart
+        val dynamicEmojis = com.jeevan.expensetracker.utils.CategoryManager.getCategories(this).associate { it.name to it.emoji }
+
         if (totalFilteredAmount > 0) {
             sortedCategories.forEachIndexed { index, entry ->
                 val percentage = (entry.value / totalFilteredAmount * 100).toFloat()
                 val color = palette[index % palette.size]
-                val emoji = getCategoryEmoji(entry.key)
+
+                // 🔥 NEW: Look up the custom emoji, or default to a money bag
+                val emoji = dynamicEmojis[entry.key] ?: "💰"
 
                 val convertedAmount = entry.value * activeRate
                 val formattedString = activeFormat.format(convertedAmount)
@@ -410,21 +415,6 @@ class ChartsActivity : AppCompatActivity() {
             Color.parseColor("#FF9F1C"), Color.parseColor("#C7F464"),
             Color.parseColor("#55D6BE"), Color.parseColor("#ACFCD9")
         )
-    }
-
-    private fun getCategoryEmoji(category: String): String {
-        return when (category) {
-            "Food" -> "🍔"
-            "Transport" -> "🚗"
-            "Shopping" -> "🛍️"
-            "Entertainment" -> "🎬"
-            "Bills" -> "💡"
-            "Healthcare" -> "🏥"
-            "Automated" -> "🤖"
-            "Salary" -> "💵"
-            "Other" -> "📌"
-            else -> "💰"
-        }
     }
 
     // 🔥 FIX: 100% reliable System Dark Mode detection

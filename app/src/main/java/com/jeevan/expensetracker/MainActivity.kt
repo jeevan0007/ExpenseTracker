@@ -55,6 +55,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.jeevan.expensetracker.data.Expense
+import com.jeevan.expensetracker.utils.CategoryManager
 import com.jeevan.expensetracker.utils.ShakeDetector
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
 import com.jeevan.expensetracker.worker.BudgetWorker
@@ -145,7 +146,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         var isSessionUnlocked = false
         var backgroundedTime = 0L
-        var isNavigatingInternally = false // 🔥 NEW: Our hallway pass
+        var isNavigatingInternally = false // 🔥 Our hallway pass
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -213,7 +214,14 @@ class MainActivity : AppCompatActivity() {
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_settings -> {
-                    Toast.makeText(this, "Settings coming soon!", Toast.LENGTH_SHORT).show()
+                    // 🔥 Give it the hallway pass so the app doesn't lock!
+                    isNavigatingInternally = true
+
+                    // Open our brand new Category Settings screen
+                    val intent = Intent(this@MainActivity, CategorySettingsActivity::class.java)
+                    startActivity(intent)
+                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
             }
@@ -290,7 +298,7 @@ class MainActivity : AppCompatActivity() {
 
         recyclerView.adapter = adapter
         recyclerView.layoutManager = LinearLayoutManager(this)
-        // 🔥 NEW: SMART FAB SCROLLING ENGINE 🔥
+        // 🔥 SMART FAB SCROLLING ENGINE 🔥
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 super.onScrollStateChanged(recyclerView, newState)
@@ -406,20 +414,13 @@ class MainActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) {}
         })
 
-        // --- CATEGORY FILTER ---
+        // --- CATEGORY FILTER (Setup just the listener here, list is populated in onResume) ---
         val spinnerCategoryFilter = findViewById<Spinner>(R.id.spinnerCategoryFilter)
-        val filterCategories = mutableListOf("All Categories").apply {
-            addAll(resources.getStringArray(R.array.categories))
-            add("Automated")
-        }
-        val filterAdapter = ArrayAdapter(this, R.layout.spinner_item, filterCategories)
-        filterAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
-        spinnerCategoryFilter.adapter = filterAdapter
-
         spinnerCategoryFilter.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val selectedCategory = if (position == 0) "All" else filterCategories[position]
-                expenseViewModel.setCategoryFilter(selectedCategory)
+                val selectedCategory = parent?.getItemAtPosition(position).toString()
+                val filterValue = if (selectedCategory == "All Categories") "All" else selectedCategory
+                expenseViewModel.setCategoryFilter(filterValue)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -429,7 +430,7 @@ class MainActivity : AppCompatActivity() {
         val tvIncomeAmount = findViewById<TextView>(R.id.tvIncomeAmount)
         val tvExpenseAmount = findViewById<TextView>(R.id.tvExpenseAmount)
         val layoutEmptyState = findViewById<LinearLayout>(R.id.layoutEmptyState)
-        val rvExpenses = findViewById<RecyclerView>(R.id.rvExpenses)
+        val rvExpensesView = findViewById<RecyclerView>(R.id.rvExpenses)
         val appBarLayout = findViewById<com.google.android.material.appbar.AppBarLayout>(R.id.appBarLayout)
         val appBarContent = findViewById<View>(R.id.appBarContent)
 
@@ -440,7 +441,7 @@ class MainActivity : AppCompatActivity() {
                 appBarLayout.setExpanded(true, true)
                 params.scrollFlags = 0
                 appBarContent.layoutParams = params
-                rvExpenses.visibility = View.GONE
+                rvExpensesView.visibility = View.GONE
                 layoutEmptyState.visibility = View.VISIBLE
                 layoutEmptyState.alpha = 0f
                 layoutEmptyState.animate().alpha(1f).setDuration(400).start()
@@ -448,16 +449,16 @@ class MainActivity : AppCompatActivity() {
             } else {
                 params.scrollFlags = com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SNAP
                 appBarContent.layoutParams = params
-                rvExpenses.visibility = View.VISIBLE
+                rvExpensesView.visibility = View.VISIBLE
                 layoutEmptyState.visibility = View.GONE
 
                 // --- CASCADING ANIMATION TRIGGER ---
-                val context = rvExpenses.context
+                val context = rvExpensesView.context
                 val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(context, R.anim.layout_anim_cascade)
-                rvExpenses.layoutAnimation = controller
+                rvExpensesView.layoutAnimation = controller
 
                 adapter.setExpenses(expenses)
-                rvExpenses.scheduleLayoutAnimation() // Forces the cascade to play!
+                rvExpensesView.scheduleLayoutAnimation() // Forces the cascade to play!
             }
         }
 
@@ -652,13 +653,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- SENSOR LIFECYCLE ---
+    // --- SENSOR LIFECYCLE & DYNAMIC DROPDOWN REFRESH ---
     override fun onResume() {
         super.onResume()
-        // Biometric dialog triggers this incorrectly, so we moved App Lock logic out of here!
         shakeDetector?.let {
             sensorManager.registerListener(it, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_UI)
         }
+
+        // 🔥 NEW: Instantly refresh the Dashboard Category Filter when returning from Settings!
+        val spinnerCategoryFilter = findViewById<Spinner>(R.id.spinnerCategoryFilter)
+        val filterCategories = mutableListOf("All Categories").apply {
+            addAll(CategoryManager.getCategories(this@MainActivity).map { it.name })
+        }
+
+        val filterAdapter = ArrayAdapter(this, R.layout.spinner_item, filterCategories)
+        filterAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item)
+
+        // Keep the user's current filter selection if it still exists
+        val currentSelection = spinnerCategoryFilter.selectedItem?.toString()
+        spinnerCategoryFilter.adapter = filterAdapter
+        val index = filterCategories.indexOf(currentSelection)
+        if (index >= 0) spinnerCategoryFilter.setSelection(index)
     }
 
     override fun onPause() {
@@ -685,7 +700,7 @@ class MainActivity : AppCompatActivity() {
         tvDateHeader.text = "Showing: All Time"
         findViewById<Button>(R.id.btnDateFilter).text = "All Time"
 
-        // 4. Reset Category Filter UI & Data (The missing piece!)
+        // 4. Reset Category Filter UI & Data
         expenseViewModel.setCategoryFilter("All")
         findViewById<Spinner>(R.id.spinnerCategoryFilter).setSelection(0)
     }
@@ -1089,9 +1104,8 @@ class MainActivity : AppCompatActivity() {
             showFullScreenReceipt(tempReceiptUri, null)
         }
 
-        // Setup Category Spinner
-        val categories = resources.getStringArray(R.array.categories).toMutableList()
-        categories.add("Salary"); categories.add("Automated")
+        // 🔥 FIXED: Setup Category Spinner dynamically
+        val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
@@ -1220,9 +1234,8 @@ class MainActivity : AppCompatActivity() {
             showFullScreenReceipt(tempReceiptUri, expense.receiptPath)
         }
 
-        // Setup Category Spinner
-        val categories = resources.getStringArray(R.array.categories).toMutableList()
-        categories.add("Salary"); categories.add("Automated")
+        // 🔥 FIXED: Setup Category Spinner dynamically
+        val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
         spinnerCategory.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
         // 🔥 NEW: Setup Recurrence Spinner and PRE-SELECT saved value

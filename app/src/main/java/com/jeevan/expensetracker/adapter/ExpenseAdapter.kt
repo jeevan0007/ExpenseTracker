@@ -13,6 +13,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.R
 import com.jeevan.expensetracker.data.Expense
+import com.jeevan.expensetracker.utils.CategoryManager
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -27,6 +28,9 @@ class ExpenseAdapter(
 
     private var exchangeRate = 1.0
     private var targetLocale = Locale("en", "IN")
+
+    // 🔥 NEW: Smart Cache so we don't lag the phone while scrolling!
+    private var cachedCategories: Map<String, String>? = null
 
     class ExpenseViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCategoryIcon: TextView = itemView.findViewById(R.id.tvCategoryIcon)
@@ -46,7 +50,15 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
-        val emoji = getCategoryEmoji(currentExpense.category)
+        // 🔥 NEW: Fetch from cache, or load it instantly if the cache is empty
+        if (cachedCategories == null) {
+            cachedCategories = CategoryManager.getCategories(holder.itemView.context)
+                .associate { it.name to it.emoji }
+        }
+
+        // Grab the custom emoji, or default to a money bag if they deleted it
+        val emoji = cachedCategories!![currentExpense.category] ?: "💰"
+
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
 
@@ -149,6 +161,7 @@ class ExpenseAdapter(
     fun setExpenses(expenses: List<Expense>) {
         this.expenses = expenses
         this.lastPosition = -1
+        this.cachedCategories = null // 🔥 Force a fresh emoji pull when the data updates!
         notifyDataSetChanged()
     }
 
@@ -162,22 +175,5 @@ class ExpenseAdapter(
         this.exchangeRate = rate
         this.targetLocale = locale
         notifyDataSetChanged()
-    }
-
-    private fun getCategoryEmoji(category: String): String {
-        return when (category) {
-            "Food" -> "🍔"
-            "Transport" -> "🚗"
-            "Shopping" -> "🛍️"
-            "Entertainment" -> "🎬"
-            "Bills" -> "💡"
-            "Healthcare" -> "🏥"
-            "Rent" -> "🏠"
-            "Fuel" -> "⛽"
-            "Automated" -> "🤖"
-            "Salary" -> "💵"
-            "Other" -> "📌"
-            else -> "💰"
-        }
     }
 }
