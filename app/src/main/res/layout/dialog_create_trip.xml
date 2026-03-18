@@ -9,55 +9,71 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Set Monthly Budget"
+        android:text="✈️ Start Trip Space"
         android:textSize="22sp"
         android:textStyle="bold"
         android:textColor="?android:attr/textColorPrimary"
-        android:layout_marginBottom="16dp"/>
+        android:layout_marginBottom="20dp"/>
 
     <com.google.android.material.textfield.TextInputLayout
         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Budget Amount"
+        android:hint="Trip Name (e.g., China Visit)"
         app:boxCornerRadiusTopStart="16dp"
         app:boxCornerRadiusTopEnd="16dp"
         app:boxCornerRadiusBottomStart="16dp"
         app:boxCornerRadiusBottomEnd="16dp">
 
         <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etBudget"
+            android:id="@+id/etTripName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="numberDecimal"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textColorHint="?android:attr/textColorSecondary"/>
+            android:inputType="textCapWords"
+            android:textColor="?android:attr/textColorPrimary"/>
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="Target Currency (e.g., USD, EUR, INR)"
+        app:boxCornerRadiusTopStart="16dp"
+        app:boxCornerRadiusTopEnd="16dp"
+        app:boxCornerRadiusBottomStart="16dp"
+        app:boxCornerRadiusBottomEnd="16dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etTargetCurrency"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textCapCharacters"
+            android:text="INR"
+            android:textColor="?android:attr/textColorPrimary"/>
     </com.google.android.material.textfield.TextInputLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="54dp"
         android:orientation="horizontal"
         android:layout_marginTop="24dp">
 
         <Button
-            android:id="@+id/btnCancelBudget"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:id="@+id/btnCancelTrip"
             android:layout_width="0dp"
-            android:layout_height="54dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="@string/cancel"
-            android:layout_marginEnd="8dp"/>
+            android:text="Cancel"
+            android:layout_marginEnd="8dp"
+            style="@style/Widget.Material3.Button.OutlinedButton"/>
 
         <Button
-            android:id="@+id/btnSaveBudget"
+            android:id="@+id/btnSaveTrip"
             android:layout_width="0dp"
-            android:layout_height="54dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="@string/save"
+            android:text="Start"
             android:layout_marginStart="8dp"/>
     </LinearLayout>
-
 </LinearLayout>

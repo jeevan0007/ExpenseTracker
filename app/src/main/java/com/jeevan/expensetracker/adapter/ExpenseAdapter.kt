@@ -8,7 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
-import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.R
@@ -42,6 +41,10 @@ class ExpenseAdapter(
         val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         val tvAmount: TextView = itemView.findViewById(R.id.tvAmount)
         val badgeReceipt: View = itemView.findViewById(R.id.badgeReceipt)
+
+        // 🔥 NEW: Billable UI References
+        val badgeBillable: View = itemView.findViewById(R.id.badgeBillable)
+        val tvClientName: TextView = itemView.findViewById(R.id.tvClientName)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ExpenseViewHolder {
@@ -53,27 +56,41 @@ class ExpenseAdapter(
     override fun onBindViewHolder(holder: ExpenseViewHolder, position: Int) {
         val currentExpense = expenses[position]
 
+        // --- Category Icon & Emoji Logic ---
         if (cachedCategories == null) {
             cachedCategories = CategoryManager.getCategories(holder.itemView.context)
                 .associate { it.name to it.emoji }
         }
-
         val emoji = cachedCategories!![currentExpense.category] ?: "💰"
-
         holder.tvCategoryIcon.text = emoji
         holder.tvCategory.text = currentExpense.category
 
+        // --- Description & Recurring Icon ---
         if (currentExpense.isRecurring) {
             holder.tvDescription.text = "🔄 ${currentExpense.description}"
         } else {
             holder.tvDescription.text = currentExpense.description
         }
 
+        // --- 🔥 BILLABLE & CLIENT NAME LOGIC ---
+        if (currentExpense.isBillable) {
+            holder.badgeBillable.visibility = View.VISIBLE
+            if (!currentExpense.clientName.isNullOrEmpty()) {
+                holder.tvClientName.visibility = View.VISIBLE
+                holder.tvClientName.text = "Client: ${currentExpense.clientName}"
+            } else {
+                holder.tvClientName.visibility = View.GONE
+            }
+        } else {
+            holder.badgeBillable.visibility = View.GONE
+            holder.tvClientName.visibility = View.GONE
+        }
+
+        // --- Amount, Currency & Stealth Mode ---
         val convertedAmount = currentExpense.amount * exchangeRate
         val currencyFormat = NumberFormat.getCurrencyInstance(targetLocale)
         val formattedAmount = currencyFormat.format(convertedAmount)
 
-        // 🔥 STEALTH MODE CHECK: Hide the numbers if locked!
         if (currentExpense.type == "Income") {
             holder.tvAmount.text = if (isStealthMode) "+ ***.**" else "+ $formattedAmount"
             holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
@@ -82,6 +99,7 @@ class ExpenseAdapter(
             holder.tvAmount.setTextColor(Color.parseColor("#D32F2F"))
         }
 
+        // --- Date Formatting ---
         try {
             val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
             holder.tvDate.text = dateFormat.format(Date(currentExpense.date))
@@ -89,12 +107,14 @@ class ExpenseAdapter(
             holder.tvDate.text = "Invalid Date"
         }
 
-        if (currentExpense.receiptPath != null) {
+        // --- Receipt Badge ---
+        if (!currentExpense.receiptPath.isNullOrEmpty()) {
             holder.badgeReceipt.visibility = View.VISIBLE
         } else {
             holder.badgeReceipt.visibility = View.GONE
         }
 
+        // --- Animations & Gestures ---
         setCascadeAnimation(holder.itemView, position)
 
         val gestureDetector = GestureDetector(holder.itemView.context, object : GestureDetector.SimpleOnGestureListener() {
@@ -126,7 +146,6 @@ class ExpenseAdapter(
 
     private fun setCascadeAnimation(viewToAnimate: View, position: Int) {
         viewToAnimate.animate().cancel()
-
         if (position > lastPosition) {
             viewToAnimate.translationY = 150f
             viewToAnimate.alpha = 0f
@@ -169,7 +188,6 @@ class ExpenseAdapter(
         notifyDataSetChanged()
     }
 
-    // 🔥 INSTANT STEALTH REFRESH
     fun setStealthMode(isStealth: Boolean) {
         if (this.isStealthMode != isStealth) {
             this.isStealthMode = isStealth

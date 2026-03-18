@@ -34,14 +34,28 @@ class UpiNotificationListener : NotificationListenerService() {
                 val finalDescription = parsedExpense.merchant.take(30)
 
                 CoroutineScope(Dispatchers.IO).launch {
+                    // --- 🔥 ON-DEVICE AI PREDICTION ---
+                    var smartCategory = db.expenseDao().predictCategoryForMerchant(finalDescription)
+
+                    // If the AI has no history of this merchant, fallback to keyword detection
+                    if (smartCategory == null) {
+                        smartCategory = detectCategory(finalDescription)
+                    }
+
+                    // --- 🔥 NEW: TRIP & PROJECT CHECK ---
+                    // Find out if the user is currently on an active trip
+                    val activeTrip = db.expenseDao().getActiveTrip()
+                    val currentTripId = activeTrip?.tripId
+
                     db.expenseDao().insert(
                         Expense(
                             amount = parsedExpense.amount,
-                            category = detectCategory(finalDescription), // Auto-categorize
+                            category = smartCategory, // Uses the AI Prediction!
                             description = finalDescription,
                             type = parsedExpense.type, // Income or Expense
                             isRecurring = false,
-                            date = System.currentTimeMillis()
+                            date = System.currentTimeMillis(),
+                            tripId = currentTripId // 🔥 Attaches to the trip (or null if home)
                         )
                     )
                 }

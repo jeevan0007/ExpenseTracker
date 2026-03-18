@@ -43,6 +43,14 @@
             android:parentActivityName=".MainActivity" />
         <activity android:name=".CategorySettingsActivity" android:exported="false" />
 
+        <activity android:name=".ReimbursementActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ExpenseTracker" />
+        
+        <activity android:name=".TripDashboardActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ExpenseTracker" />
+
         <receiver
             android:name=".receiver.SmsReceiver"
             android:exported="true"

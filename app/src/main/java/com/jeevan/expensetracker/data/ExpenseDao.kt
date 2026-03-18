@@ -58,6 +58,64 @@ interface ExpenseDao {
     // Single permanent delete
     @Delete
     suspend fun hardDelete(expense: Expense)
+
+    // --- ON-DEVICE AI CATEGORY PREDICTION ---
+    // Finds the most frequently used category for a specific merchant/description
+    @Query("""
+        SELECT category FROM expense_table 
+        WHERE LOWER(description) = LOWER(:merchant) 
+        AND type = 'Expense' 
+        AND isDeleted = 0 
+        GROUP BY category 
+        ORDER BY COUNT(id) DESC 
+        LIMIT 1
+    """)
+    suspend fun predictCategoryForMerchant(merchant: String): String?
+
+    // --- REIMBURSEMENT WORKFLOW ---
+
+    // 1. Get all expenses marked as billable but not yet paid back by the client
+    @Query("SELECT * FROM expense_table WHERE isBillable = 1 AND isReimbursed = 0 AND isDeleted = 0 ORDER BY date DESC")
+    fun getPendingReimbursements(): LiveData<List<Expense>>
+
+    // 2. Get total pending reimbursement amount to display at the top of the UI
+    @Query("SELECT SUM(amount) FROM expense_table WHERE isBillable = 1 AND isReimbursed = 0 AND isDeleted = 0")
+    fun getTotalPendingReimbursement(): LiveData<Double>
+
+    // 3. Mark a batch of expenses as reimbursed (e.g., when HR approves the PDF report)
+    @Query("UPDATE expense_table SET isReimbursed = 1 WHERE id IN (:expenseIds)")
+    suspend fun markAsReimbursed(expenseIds: List<Int>)
+
+    // --- 🔥 NEW: TRIP & PROJECT WORKFLOW ---
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTrip(trip: TripSpace): Long
+
+    @Update
+    suspend fun updateTrip(trip: TripSpace)
+
+    // Gets all trips for the dashboard
+    @Query("SELECT * FROM trip_table ORDER BY startDate DESC")
+    fun getAllTrips(): LiveData<List<TripSpace>>
+
+    // Finds the currently active trip (if any) so the SMS receiver knows where to log auto-expenses
+    @Query("SELECT * FROM trip_table WHERE isActive = 1 LIMIT 1")
+    suspend fun getActiveTrip(): TripSpace?
+
+    // Deactivates all trips (ensures only one is active at a time)
+    @Query("UPDATE trip_table SET isActive = 0")
+    suspend fun deactivateAllTrips()
+
+    // Gets all expenses associated with a specific trip for the PDF export
+    @Query("SELECT * FROM expense_table WHERE tripId = :tripId AND isDeleted = 0 ORDER BY date DESC")
+    fun getExpensesForTrip(tripId: Int): LiveData<List<Expense>>
+    @Query("SELECT * FROM expense_table WHERE tripId = :tripId AND isDeleted = 0 ORDER BY date DESC")
+    suspend fun getExpensesForTripSync(tripId: Int): List<Expense>
+
+    // Gets the total spent on a specific trip
+    @Query("SELECT SUM(amount) FROM expense_table WHERE tripId = :tripId AND type = 'Expense' AND isDeleted = 0")
+    fun getTotalSpentForTrip(tripId: Int): LiveData<Double>
+
 }
 
 // Helper class for Chart Data

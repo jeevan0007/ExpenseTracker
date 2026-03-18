@@ -15,7 +15,15 @@ import java.util.*
 
 object PdfReportGenerator {
 
-    fun generatePdf(context: Context, expenses: List<Expense>, currencyRate: Double, locale: Locale): File? {
+    // 🔥 NEW: Added 'reportTitle' parameter so trips can have their own names!
+    fun generatePdf(
+        context: Context,
+        expenses: List<Expense>,
+        currencyRate: Double,
+        locale: Locale,
+        isInvoice: Boolean = false,
+        reportTitle: String = "PROFESSIONAL EXPENSE LEDGER" // Default for standard exports
+    ): File? {
         if (expenses.isEmpty()) return null
 
         val pdfDocument = PdfDocument()
@@ -37,8 +45,11 @@ object PdfReportGenerator {
         var yPosition = 50f
 
         // --- HEADER ---
-        canvas.drawText("PROFESSIONAL EXPENSE LEDGER", 40f, yPosition, titlePaint)
+        // 🔥 FIX: Now properly uses your custom Trip title!
+        val finalTitle = if (isInvoice) "REIMBURSEMENT INVOICE" else reportTitle
+        canvas.drawText(finalTitle, 40f, yPosition, titlePaint)
         yPosition += 25f
+
         val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
         canvas.drawText("Generated on: ${sdf.format(Date())}", 40f, yPosition, subtitlePaint)
         yPosition += 40f
@@ -64,7 +75,7 @@ object PdfReportGenerator {
 
         // --- DRAW ROWS ---
         for (expense in sortedExpenses) {
-            // Pagination Check: If we reach the bottom of the page, start a new one!
+            // Pagination Check
             if (yPosition > 780f) {
                 pdfDocument.finishPage(page)
                 page = pdfDocument.startPage(pageInfo)
@@ -77,10 +88,16 @@ object PdfReportGenerator {
             }
             isAltRow = !isAltRow
 
-            // Truncate long descriptions so they don't overlap columns
+            // If it's an invoice, append the client name to the description!
             var desc = expense.description
-            if (desc.length > 20) desc = desc.substring(0, 17) + "..."
+            if (isInvoice && !expense.clientName.isNullOrBlank()) {
+                desc = "$desc [${expense.clientName}]"
+            }
 
+            // Truncate long descriptions
+            if (desc.length > 25) desc = desc.substring(0, 22) + "..."
+
+            // 🔥 Note: The TripDashboardActivity is now properly sending the exact localized exportRate
             val convertedAmount = expense.amount * currencyRate
             val formattedAmount = currencyFormat.format(convertedAmount)
 
@@ -101,7 +118,7 @@ object PdfReportGenerator {
 
         // --- DRAW SUMMARY FOOTER ---
         yPosition += 20f
-        if (yPosition > 750f) { // Pagination check for summary
+        if (yPosition > 750f) {
             pdfDocument.finishPage(page)
             page = pdfDocument.startPage(pageInfo)
             canvas = page.canvas
@@ -114,27 +131,36 @@ object PdfReportGenerator {
         canvas.drawText("SUMMARY", 40f, yPosition, titlePaint)
         yPosition += 30f
 
-        canvas.drawText("Total Income:", 40f, yPosition, textPaint)
-        canvas.drawText(currencyFormat.format(totalIncome), 150f, yPosition, positivePaint)
-        yPosition += 20f
+        // --- SMART SUMMARY LOGIC ---
+        if (isInvoice) {
+            // For invoices, the user just wants to know exactly what they are owed.
+            canvas.drawText("Total Reimbursable Amount:", 40f, yPosition, textPaint)
+            canvas.drawText(currencyFormat.format(totalExpense), 240f, yPosition, positivePaint)
+        } else {
+            // Standard ledger summary
+            canvas.drawText("Total Income:", 40f, yPosition, textPaint)
+            canvas.drawText(currencyFormat.format(totalIncome), 150f, yPosition, positivePaint)
+            yPosition += 20f
 
-        canvas.drawText("Total Expense:", 40f, yPosition, textPaint)
-        canvas.drawText(currencyFormat.format(totalExpense), 150f, yPosition, negativePaint)
-        yPosition += 20f
+            canvas.drawText("Total Expense:", 40f, yPosition, textPaint)
+            canvas.drawText(currencyFormat.format(totalExpense), 150f, yPosition, negativePaint)
+            yPosition += 20f
 
-        canvas.drawLine(40f, yPosition, 250f, yPosition, linePaint)
-        yPosition += 20f
+            canvas.drawLine(40f, yPosition, 250f, yPosition, linePaint)
+            yPosition += 20f
 
-        val netBalance = totalIncome - totalExpense
-        canvas.drawText("Net Balance:", 40f, yPosition, textPaint)
-        val balancePaint = if (netBalance >= 0) positivePaint else negativePaint
-        canvas.drawText(currencyFormat.format(netBalance), 150f, yPosition, balancePaint)
+            val netBalance = totalIncome - totalExpense
+            canvas.drawText("Net Balance:", 40f, yPosition, textPaint)
+            val balancePaint = if (netBalance >= 0) positivePaint else negativePaint
+            canvas.drawText(currencyFormat.format(netBalance), 150f, yPosition, balancePaint)
+        }
 
         pdfDocument.finishPage(page)
 
         // --- SAVE FILE ---
         return try {
-            val fileName = "ExpenseReport_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.pdf"
+            val prefix = if (isInvoice) "Invoice_" else "ExpenseReport_"
+            val fileName = "$prefix${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.pdf"
             val file = File(context.cacheDir, fileName)
             pdfDocument.writeTo(FileOutputStream(file))
             pdfDocument.close()

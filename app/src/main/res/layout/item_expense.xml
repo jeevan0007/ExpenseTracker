@@ -69,32 +69,37 @@
                     app:cardCornerRadius="6dp"
                     app:cardElevation="0dp"
                     android:visibility="gone">
-
-                    <LinearLayout
+                    <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="6dp"
-                        android:paddingEnd="6dp"
-                        android:paddingTop="2dp"
-                        android:paddingBottom="2dp">
+                        android:text="📎 Receipt"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:paddingHorizontal="6dp"
+                        android:paddingVertical="2dp"
+                        android:textColor="?android:attr/textColorSecondary"/>
+                </com.google.android.material.card.MaterialCardView>
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="📎"
-                            android:textSize="10sp"/>
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Receipt"
-                            android:textSize="10sp"
-                            android:textStyle="bold"
-                            android:layout_marginStart="4dp"
-                            android:textColor="?android:attr/textColorSecondary"/>
-                    </LinearLayout>
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/badgeBillable"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    app:cardBackgroundColor="#262196F3"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="#402196F3"
+                    app:cardCornerRadius="6dp"
+                    app:cardElevation="0dp"
+                    android:visibility="gone">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="💼 Billable"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:paddingHorizontal="6dp"
+                        android:paddingVertical="2dp"
+                        android:textColor="#2196F3"/>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
@@ -105,7 +110,19 @@
                 android:text="Lunch at restaurant"
                 android:textSize="14sp"
                 android:alpha="0.7"
+                android:textColor="?android:attr/textColorPrimary"
                 android:layout_marginTop="2dp"/>
+
+            <TextView
+                android:id="@+id/tvClientName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Client: Jeevan"
+                android:textSize="12sp"
+                android:textStyle="italic"
+                android:textColor="?android:attr/textColorSecondary"
+                android:visibility="gone"
+                android:layout_marginTop="1dp"/>
 
             <TextView
                 android:id="@+id/tvDate"

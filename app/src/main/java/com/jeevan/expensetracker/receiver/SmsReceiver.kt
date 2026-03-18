@@ -22,7 +22,7 @@ class SmsReceiver : BroadcastReceiver() {
                 val sender = sms.originatingAddress ?: "Unknown"
 
                 // 1. Send the raw message to the Central Brain (PaymentParser)
-                val parsedExpense = PaymentParser.parseSms(body)
+                val parsedExpense = PaymentParser.parseSms(body, sender)
 
                 // 2. If the brain successfully extracted money and merchant...
                 if (parsedExpense != null) {
@@ -57,14 +57,28 @@ class SmsReceiver : BroadcastReceiver() {
                         }
 
                         CoroutineScope(Dispatchers.IO).launch {
+                            // --- 🔥 ON-DEVICE AI PREDICTION ---
+                            var smartCategory = db.expenseDao().predictCategoryForMerchant(finalDescription)
+
+                            // If the AI has no history of this merchant, fallback to keyword detection
+                            if (smartCategory == null) {
+                                smartCategory = detectCategory(finalDescription)
+                            }
+
+                            // --- 🔥 NEW: TRIP & PROJECT CHECK ---
+                            // Find out if the user is currently on an active trip
+                            val activeTrip = db.expenseDao().getActiveTrip()
+                            val currentTripId = activeTrip?.tripId
+
                             db.expenseDao().insert(
                                 Expense(
                                     amount = parsedExpense.amount,
-                                    category = detectCategory(finalDescription),
+                                    category = smartCategory, // Uses the AI Prediction!
                                     description = finalDescription,
                                     type = parsedExpense.type,
                                     isRecurring = false,
-                                    date = System.currentTimeMillis()
+                                    date = System.currentTimeMillis(),
+                                    tripId = currentTripId // 🔥 Attaches to the trip (or null if home)
                                 )
                             )
                         }

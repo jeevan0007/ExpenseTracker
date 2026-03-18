@@ -47,12 +47,14 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.lifecycle.lifecycleScope
 import com.airbnb.lottie.LottieAnimationView
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
+import com.jeevan.expensetracker.data.ExpenseDatabase
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.utils.CategoryManager
@@ -65,6 +67,9 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // 🔥 ML KIT IMPORTS
 import com.google.mlkit.vision.common.InputImage
@@ -86,6 +91,7 @@ class MainActivity : AppCompatActivity() {
     private var oldBalanceAnimState: Double = 0.0
     private var oldIncomeAnimState: Double = 0.0
     private var oldExpenseAnimState: Double = 0.0
+    private val numberAnimators = mutableMapOf<Int, ValueAnimator>()
 
     // Premium FAB State
     private var isFabExpanded = false
@@ -127,10 +133,20 @@ class MainActivity : AppCompatActivity() {
                 scaleX = 0f
                 scaleY = 0f
                 animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(1.5f)).start()
+
+                // 🔥 NEW: Find the buttons from the current preview's parent layout
+                val parentLayout = this.parent as? View
+                parentLayout?.let { view ->
+                    val btnRemove = view.findViewById<Button>(R.id.btnRemoveReceipt)
+                    val btnAttach = view.findViewById<Button>(R.id.btnAttachReceipt)
+
+                    btnRemove?.visibility = View.VISIBLE
+                    btnAttach?.text = "Change"
+                }
             }
             vibratePhoneLight()
 
-            // 🔥 Trigger the Offline AI Scanner
+            // Trigger the Offline AI Scanner
             processReceiptImage(it)
         }
     }
@@ -163,17 +179,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun extractTotalAmount(text: String): Double? {
-        // Looks for standard price formats (e.g. 12.99, 1,234.56, 1234.56)
         val regex = Regex("""\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d+\.\d{2}\b""")
         val matches = regex.findAll(text)
         var maxAmount = 0.0
 
         for (match in matches) {
-            // Strip out commas so the computer can do the math
             val cleanString = match.value.replace(",", "")
             val value = cleanString.toDoubleOrNull() ?: 0.0
 
-            // Assume the largest monetary value on the receipt is the Total
             if (value > maxAmount) {
                 maxAmount = value
             }
@@ -262,6 +275,13 @@ class MainActivity : AppCompatActivity() {
         navView.setNavigationItemSelectedListener { menuItem ->
             when (menuItem.itemId) {
                 R.id.nav_home -> {
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                }
+                R.id.nav_trips -> {
+                    isNavigatingInternally = true
+                    val intent = Intent(this@MainActivity, TripDashboardActivity::class.java)
+                    startActivity(intent)
+                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_recycle_bin -> {
@@ -598,16 +618,12 @@ class MainActivity : AppCompatActivity() {
             tvExpense.text = "***.**"
             tvBalance.text = "***.**"
         } else {
-            if (isTravelModeActive) {
-                updateHeaderCurrency()
-            } else {
-                animateNumberRoll(tvIncome, 0.0, currentIncome)
-                animateNumberRoll(tvExpense, 0.0, currentExpense)
-                animateNumberRoll(tvBalance, 0.0, currentIncome - currentExpense)
-            }
+            // 🔥 Always roll them when un-hiding!
+            animateNumberRoll(tvIncome, 0.0, currentIncome)
+            animateNumberRoll(tvExpense, 0.0, currentExpense)
+            animateNumberRoll(tvBalance, 0.0, currentIncome - currentExpense)
         }
 
-        // Hide or show the predictive text too!
         updatePredictiveInsight()
 
         if (::adapter.isInitialized) {
@@ -735,14 +751,39 @@ class MainActivity : AppCompatActivity() {
     private fun resetToDefaults() {
         vibrateReset()
         Toast.makeText(this, "🔄 Resetting to Home Mode...", Toast.LENGTH_SHORT).show()
+
+        // 1. Reset Currency
         setCurrency(1.0, Locale("en", "IN"), false)
+
+        // 2. Reset Search
         expenseViewModel.setSearchQuery("")
         findViewById<EditText>(R.id.etSearch).setText("")
-        expenseViewModel.clearDateFilter()
-        tvDateHeader.text = "Showing: All Time"
-        findViewById<Button>(R.id.btnDateFilter).text = "All Time"
+
+        // 3. Reset Category
         expenseViewModel.setCategoryFilter("All")
         findViewById<Spinner>(R.id.spinnerCategoryFilter).setSelection(0)
+
+        // 4. Reset Date Filter back to "This Month" instead of "All Time"
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+        val startOfMonth = calendar.apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val endOfMonth = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+
+        expenseViewModel.setDateRangeFilter(startOfMonth, endOfMonth)
+
+        findViewById<Button>(R.id.btnDateFilter).text = "This Month"
+        tvDateHeader.text = "Showing: This Month"
     }
 
     private fun loadSavedCurrency(sharedPref: android.content.SharedPreferences) {
@@ -805,20 +846,20 @@ class MainActivity : AppCompatActivity() {
         val tvIncome = findViewById<TextView>(R.id.tvIncomeAmount)
         val tvExpense = findViewById<TextView>(R.id.tvExpenseAmount)
 
-        val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
-
-        val dispBalance = (currentIncome - currentExpense) * activeCurrencyRate
-        val dispIncome = currentIncome * activeCurrencyRate
-        val dispExpense = currentExpense * activeCurrencyRate
-
         if (isStealthMode) {
             tvBalance.text = "***.**"
             tvIncome.text = "***.**"
             tvExpense.text = "***.**"
         } else {
-            tvBalance.text = format.format(dispBalance)
-            tvIncome.text = format.format(dispIncome)
-            tvExpense.text = format.format(dispExpense)
+            // 🔥 Force a cool re-roll from 0 whenever the currency changes!
+            animateNumberRoll(tvIncome, 0.0, currentIncome)
+            animateNumberRoll(tvExpense, 0.0, currentExpense)
+            animateNumberRoll(tvBalance, 0.0, currentIncome - currentExpense)
+
+            // Reset the tracking states so future updates roll from the correct spot
+            oldIncomeAnimState = currentIncome
+            oldExpenseAnimState = currentExpense
+            oldBalanceAnimState = currentIncome - currentExpense
         }
     }
 
@@ -942,7 +983,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun animateNumberRoll(textView: TextView, oldValue: Double, newValue: Double) {
-        val animator = ValueAnimator.ofFloat(oldValue.toFloat(), newValue.toFloat())
+        val viewId = textView.id
+
+        // 🛡️ THE BULLETPROOF SHIELD
+        // If the database re-emits the exact same target number, ignore it so we don't kill the active animation!
+        if (abs(oldValue - newValue) < 0.01) {
+            if (numberAnimators[viewId]?.isRunning != true) {
+                val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
+                textView.text = format.format(newValue * activeCurrencyRate)
+            }
+            return
+        }
+
+        // 🌊 FLUID INTERRUPTION
+        // If an animation is already running (e.g. Income and Expense loaded simultaneously),
+        // intercept it mid-air instead of snapping!
+        var startValue = oldValue.toFloat()
+        numberAnimators[viewId]?.let { activeAnimator ->
+            if (activeAnimator.isRunning) {
+                // Grab the exact number it is currently on
+                startValue = activeAnimator.animatedValue as Float
+                activeAnimator.cancel()
+            }
+        }
+
+        // 🚀 THE RESET OVERRIDE
+        // If we explicitly passed 0.0 (like on app launch or currency switch), force it to start from 0
+        if (oldValue == 0.0) {
+            startValue = 0.0f
+        }
+
+        val animator = ValueAnimator.ofFloat(startValue, newValue.toFloat())
         animator.duration = 1500
         animator.interpolator = DecelerateInterpolator(1.5f)
 
@@ -955,9 +1026,11 @@ class MainActivity : AppCompatActivity() {
 
         animator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                if (abs(oldValue - newValue) > 1) vibratePhoneLight()
+                if (abs(startValue - newValue.toFloat()) > 1) vibratePhoneLight()
             }
         })
+
+        numberAnimators[viewId] = animator
         animator.start()
     }
 
@@ -967,12 +1040,9 @@ class MainActivity : AppCompatActivity() {
             tvBalance.text = "***.**"
             oldBalanceAnimState = newBalance // keep tracking silently
         } else {
-            if (isTravelModeActive) {
-                updateHeaderCurrency()
-            } else {
-                animateNumberRoll(tvBalance, oldBalanceAnimState, newBalance)
-                oldBalanceAnimState = newBalance
-            }
+            // 🔥 Removed the travel mode bypass! Let the numbers roll!
+            animateNumberRoll(tvBalance, oldBalanceAnimState, newBalance)
+            oldBalanceAnimState = newBalance
         }
     }
 
@@ -1130,7 +1200,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAddExpenseDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
-        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+        val dialog = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog).setView(dialogView).create()
         dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
         val radioGroupType = dialogView.findViewById<RadioGroup>(R.id.radioGroupType)
@@ -1141,16 +1211,30 @@ class MainActivity : AppCompatActivity() {
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
         val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
-        currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
-        tempReceiptUri = null
 
-        // 🔥 Link the active text box so the AI knows where to type
+        // 🔥 1. Initialize Remove Button
+        val btnRemoveReceipt = dialogView.findViewById<Button>(R.id.btnRemoveReceipt)
+        currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
+
+        // 🔥 2. Reset State for a fresh "Add"
+        tempReceiptUri = null
+        btnRemoveReceipt.visibility = android.view.View.GONE
+
+        val switchBillable = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchBillable)
+        val layoutClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.layoutClientName)
+        val etClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etClientName)
+
+        switchBillable.setOnCheckedChangeListener { _, isChecked ->
+            layoutClientName.visibility = if (isChecked) android.view.View.VISIBLE else android.view.View.GONE
+        }
+
         activeAmountInput = etAmount
 
         currentReceiptPreview?.setOnClickListener {
             showFullScreenReceipt(tempReceiptUri, null)
         }
 
+        // --- Spinner Setup ---
         val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -1163,6 +1247,16 @@ class MainActivity : AppCompatActivity() {
 
         val symbol = java.util.Currency.getInstance(activeCurrencyLocale).symbol
         etAmount.hint = "Amount ($symbol)"
+
+        // 🔥 3. Remove Button Logic for the "Add" session
+        applySquishPhysics(btnRemoveReceipt) {
+            currentReceiptPreview?.visibility = android.view.View.GONE
+            currentReceiptPreview?.setImageDrawable(null)
+            tempReceiptUri = null // This is key: it clears the path before save
+            btnAttachReceipt.text = "📷 Attach Receipt"
+            btnRemoveReceipt.visibility = android.view.View.GONE
+            vibratePhoneLight()
+        }
 
         applySquishPhysics(btnAttachReceipt) {
             isNavigatingInternally = true
@@ -1177,6 +1271,9 @@ class MainActivity : AppCompatActivity() {
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
             val isRecurringFlag = selectedRecurrence != "None"
 
+            val isBillable = switchBillable.isChecked
+            val clientName = if (isBillable) etClientName.text.toString().trim() else null
+
             val rawInput = amountText.toDoubleOrNull()
             var hasError = false
 
@@ -1189,6 +1286,11 @@ class MainActivity : AppCompatActivity() {
                 hasError = true
             }
 
+            if (isBillable && clientName.isNullOrEmpty()) {
+                shakeErrorView(etClientName)
+                hasError = true
+            }
+
             if (hasError) {
                 vibratePhone()
                 Toast.makeText(this@MainActivity, "G1 says enter mandatory fields", Toast.LENGTH_SHORT).show()
@@ -1198,26 +1300,37 @@ class MainActivity : AppCompatActivity() {
             expenseBeforeAdd = currentExpense
             val amountInInr = if (isTravelModeActive) rawInput!! / activeCurrencyRate else rawInput!!
 
+            // 🔥 Final check for receipt path
             var finalReceiptPath: String? = null
             tempReceiptUri?.let { uri ->
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
             }
 
-            expenseViewModel.insert(
-                Expense(
+            lifecycleScope.launch(Dispatchers.IO) {
+                val db = ExpenseDatabase.getDatabase(this@MainActivity)
+                val activeTrip = db.expenseDao().getActiveTrip()
+
+                val newExpense = Expense(
                     amount = amountInInr,
                     category = category,
                     description = description,
                     type = type,
                     isRecurring = isRecurringFlag,
                     recurrenceType = selectedRecurrence,
-                    receiptPath = finalReceiptPath
+                    receiptPath = finalReceiptPath, // Will be null if Remove was clicked
+                    isBillable = isBillable,
+                    clientName = clientName,
+                    isReimbursed = false,
+                    tripId = activeTrip?.tripId
                 )
-            )
-            triggerBalancePulse(type == "Income")
-            dialog.dismiss()
 
-            if (type == "Expense") shouldCheckBudget = true
+                withContext(Dispatchers.Main) {
+                    expenseViewModel.insert(newExpense)
+                    triggerBalancePulse(type == "Income")
+                    dialog.dismiss()
+                    if (type == "Expense") shouldCheckBudget = true
+                }
+            }
         }
         applySquishPhysics(btnCancel) { dialog.dismiss() }
         dialog.show()
@@ -1255,9 +1368,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun showEditDialog(expense: Expense) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
-        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+
+        // Material3 Theme Wrapper for proper Dark Mode support
+        val dialog = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog)
+            .setView(dialogView)
+            .create()
+
         dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
+        // View Initializations
         val radioGroupType = dialogView.findViewById<RadioGroup>(R.id.radioGroupType)
         val etAmount = dialogView.findViewById<TextInputEditText>(R.id.etAmount)
         val etDescription = dialogView.findViewById<TextInputEditText>(R.id.etDescription)
@@ -1265,51 +1384,81 @@ class MainActivity : AppCompatActivity() {
         val spinnerRecurrence = dialogView.findViewById<Spinner>(R.id.spinnerRecurrence)
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
+
+        // Receipt UI
         val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
-
+        val btnRemoveReceipt = dialogView.findViewById<Button>(R.id.btnRemoveReceipt)
         currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
-        tempReceiptUri = null
 
-        // 🔥 Link the active text box so the AI knows where to type
+        // Billable UI
+        val switchBillable = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchBillable)
+        val layoutClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.layoutClientName)
+        val etClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etClientName)
+
+        tempReceiptUri = null
         activeAmountInput = etAmount
 
-        currentReceiptPreview?.setOnClickListener {
-            showFullScreenReceipt(tempReceiptUri, expense.receiptPath)
-        }
-
-        val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
-        spinnerCategory.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories).apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-
-        val recurrenceOptions = listOf("None", "Monthly", "Yearly")
-        val recurrenceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions)
-        recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinnerRecurrence.adapter = recurrenceAdapter
-
-        val recIndex = recurrenceOptions.indexOf(expense.recurrenceType)
-        if (recIndex >= 0) {
-            spinnerRecurrence.setSelection(recIndex)
-        } else if (expense.isRecurring) {
-            spinnerRecurrence.setSelection(1)
-        }
-
+        // --- POPULATE DATA ---
         etAmount.setText(expense.amount.toString())
         etDescription.setText(expense.description)
         radioGroupType.check(if (expense.type == "Income") R.id.radioIncome else R.id.radioExpense)
-        categories.indexOf(expense.category).takeIf { it >= 0 }?.let { spinnerCategory.setSelection(it) }
 
+        // Billable state
+        switchBillable.isChecked = expense.isBillable
+        if (expense.isBillable) {
+            layoutClientName.visibility = View.VISIBLE
+            etClientName.setText(expense.clientName)
+        }
+
+        switchBillable.setOnCheckedChangeListener { _, isChecked ->
+            layoutClientName.visibility = if (isChecked) View.VISIBLE else View.GONE
+        }
+
+        // Handle existing receipt
+        var finalReceiptPath: String? = expense.receiptPath
         if (expense.receiptPath != null) {
             val file = java.io.File(expense.receiptPath)
             if (file.exists()) {
                 currentReceiptPreview?.visibility = View.VISIBLE
                 currentReceiptPreview?.setImageURI(android.net.Uri.fromFile(file))
-                btnAttachReceipt.text = "Change Receipt"
+                btnAttachReceipt.text = "Change"
+                btnRemoveReceipt.visibility = View.VISIBLE
             }
+        }
+
+        // --- BUTTON LOGIC ---
+
+        // Remove Receipt logic
+        applySquishPhysics(btnRemoveReceipt) {
+            currentReceiptPreview?.visibility = View.GONE
+            currentReceiptPreview?.setImageDrawable(null)
+            tempReceiptUri = null
+            finalReceiptPath = null // Mark for deletion in DB
+            btnAttachReceipt.text = "📷 Attach Receipt"
+            btnRemoveReceipt.visibility = View.GONE
+            vibratePhoneLight()
         }
 
         applySquishPhysics(btnAttachReceipt) {
             isNavigatingInternally = true
             pickReceiptLauncher.launch("image/*")
+            // Note: When a new image is picked, btnRemoveReceipt visibility
+            // should be handled in your activityResultLauncher
         }
+
+        // Spinners setup
+        val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
+        spinnerCategory.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        categories.indexOf(expense.category).takeIf { it >= 0 }?.let { spinnerCategory.setSelection(it) }
+
+        val recurrenceOptions = listOf("None", "Monthly", "Yearly")
+        spinnerRecurrence.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        val recIndex = recurrenceOptions.indexOf(expense.recurrenceType)
+        if (recIndex >= 0) spinnerRecurrence.setSelection(recIndex)
 
         btnSave.text = "Update"
         applySquishPhysics(btnSave) {
@@ -1317,70 +1466,94 @@ class MainActivity : AppCompatActivity() {
             val description = etDescription.text.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
-            val isRecurringFlag = selectedRecurrence != "None"
+
+            val isBillable = switchBillable.isChecked
+            val clientName = if (isBillable) etClientName.text.toString().trim() else null
 
             val amount = amountText.toDoubleOrNull()
-            var hasError = false
-
-            if (amount == null || amount <= 0) {
-                shakeErrorView(etAmount)
-                hasError = true
-            }
-            if (description.isEmpty()) {
-                shakeErrorView(etDescription)
-                hasError = true
-            }
-
-            if (hasError) {
+            if (amount == null || amount <= 0 || description.isEmpty()) {
                 vibratePhone()
-                Toast.makeText(this@MainActivity, "G1 says enter mandatory fields", Toast.LENGTH_SHORT).show()
+                if (amount == null) shakeErrorView(etAmount)
+                if (description.isEmpty()) shakeErrorView(etDescription)
                 return@applySquishPhysics
             }
 
-            expenseBeforeAdd = currentExpense
-
-            var finalReceiptPath = expense.receiptPath
+            // Handle new receipt if picked
             tempReceiptUri?.let { uri ->
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
             }
 
             expenseViewModel.update(
                 expense.copy(
-                    amount = amount!!,
+                    amount = amount,
                     category = spinnerCategory.selectedItem.toString(),
                     description = description,
                     type = type,
-                    isRecurring = isRecurringFlag,
+                    isRecurring = selectedRecurrence != "None",
                     recurrenceType = selectedRecurrence,
-                    receiptPath = finalReceiptPath
+                    receiptPath = finalReceiptPath, // Will be null if "Remove" was clicked
+                    isBillable = isBillable,
+                    clientName = clientName
                 )
             )
             dialog.dismiss()
-
             if (type == "Expense") shouldCheckBudget = true
         }
+
         applySquishPhysics(btnCancel) { dialog.dismiss() }
         dialog.show()
     }
 
     private fun showSetBudgetDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_set_budget, null)
-        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
+
+        // 🔥 FIX: Added Material3 Theme Overlay to fix Dark Mode text/background colors
+        val dialog = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog)
+            .setView(dialogView)
+            .create()
+
         dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
         val etBudget = dialogView.findViewById<TextInputEditText>(R.id.etBudget)
-        if (monthlyBudget > 0) etBudget.setText(monthlyBudget.toString())
+        val btnSaveBudget = dialogView.findViewById<Button>(R.id.btnSaveBudget)
+        val btnCancelBudget = dialogView.findViewById<Button>(R.id.btnCancelBudget)
 
-        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnSaveBudget)) {
-            val budget = etBudget.text.toString().toDoubleOrNull()
-            if (budget == null || budget <= 0) return@applySquishPhysics
-            monthlyBudget = budget
-            getSharedPreferences("ExpenseTracker", MODE_PRIVATE).edit().putFloat("monthly_budget", budget.toFloat()).apply()
-            dialog.dismiss()
-            updatePredictiveInsight() // Update UI instantly
-            checkBudgetStatus()
+        // Pre-fill existing budget
+        if (monthlyBudget > 0) {
+            etBudget.setText(monthlyBudget.toString())
         }
-        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnCancelBudget)) { dialog.dismiss() }
+
+        applySquishPhysics(btnSaveBudget) {
+            val budgetText = etBudget.text.toString()
+            val budget = budgetText.toDoubleOrNull()
+
+            if (budget == null || budget <= 0) {
+                shakeErrorView(etBudget)
+                vibratePhone()
+                return@applySquishPhysics
+            }
+
+            // Save to variable and SharedPreferences
+            monthlyBudget = budget
+            getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+                .edit()
+                .putFloat("monthly_budget", budget.toFloat())
+                .apply()
+
+            vibratePhone()
+            dialog.dismiss()
+
+            // Refresh UI components
+            updatePredictiveInsight()
+            checkBudgetStatus()
+
+            Toast.makeText(this, "Budget updated! 🎯", Toast.LENGTH_SHORT).show()
+        }
+
+        applySquishPhysics(btnCancelBudget) {
+            dialog.dismiss()
+        }
+
         dialog.show()
     }
 
@@ -1520,9 +1693,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun exportDataToCSV() {
-        // We will keep the function name the same so the FAB button doesn't break,
-        // but we are actually generating a Premium PDF now!
-
         val expenses = expenseViewModel.filteredExpenses.value
 
         if (expenses.isNullOrEmpty()) {
@@ -1533,7 +1703,6 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Generating Professional PDF...", Toast.LENGTH_SHORT).show()
 
         try {
-            // Call our new PDF Engine!
             val pdfFile = com.jeevan.expensetracker.utils.PdfReportGenerator.generatePdf(
                 this,
                 expenses,
@@ -1542,16 +1711,14 @@ class MainActivity : AppCompatActivity() {
             )
 
             if (pdfFile != null) {
-                // Get the URI for the file using FileProvider
                 val uri = androidx.core.content.FileProvider.getUriForFile(
                     this,
                     "${applicationContext.packageName}.provider",
                     pdfFile
                 )
 
-                // Fire the share intent
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/pdf" // 🔥 Switched from text/csv to application/pdf
+                    type = "application/pdf"
                     putExtra(Intent.EXTRA_STREAM, uri)
                     putExtra(Intent.EXTRA_SUBJECT, "Professional Expense Report")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

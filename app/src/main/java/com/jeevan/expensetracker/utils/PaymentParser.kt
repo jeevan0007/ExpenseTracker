@@ -1,6 +1,5 @@
 package com.jeevan.expensetracker.utils
 
-// NEW: Added 'type' so the app knows if it's Income or Expense!
 data class ParsedExpense(
     val amount: Double,
     val merchant: String,
@@ -10,19 +9,39 @@ data class ParsedExpense(
 
 object PaymentParser {
 
-    fun parseSms(message: String): ParsedExpense? {
+    // UPDATE: Added sender parameter with a default empty string
+    fun parseSms(message: String, sender: String = ""): ParsedExpense? {
+
+        // --- 🛡️ 1. SENDER ID FILTER (Crucial for Indian Banks) ---
+        // Indian bank/UPI sender IDs format is usually "XX-HDFCBK" or similar alphabetic codes.
+        // If the sender is a standard 10-digit or 12-digit phone number, it's personal or spam. Drop it.
+        if (sender.matches(Regex("^[+0-9]{10,13}$"))) return null
+
         val lowerMsg = message.lowercase()
 
-        // 1. Determine if it's Income or Expense
-        val isExpense = lowerMsg.contains("debited") || lowerMsg.contains("spent") || lowerMsg.contains("paid") || lowerMsg.contains("sent") || lowerMsg.contains("deducted")
-        val isIncome = lowerMsg.contains("credited") || lowerMsg.contains("received") || lowerMsg.contains("added") || lowerMsg.contains("deposited")
+        // --- 🛡️ 2. NEGATIVE KEYWORD BLOCKLIST ---
+        // If it contains promotional words, immediately discard.
+        val spamKeywords = listOf(
+            "loan", "cash", "win", "offer", "discount", "jackpot",
+            "rummy", "bet", "free", "hurry", "claim", "apply now", "kyc"
+        )
+        if (spamKeywords.any { lowerMsg.contains(it) }) return null
+
+        // --- 🛡️ 3. EMOJI BLOCKER ---
+        // Official bank messages NEVER use emojis.
+        val emojiRegex = Regex("[\\x{1F300}-\\x{1F6FF}|\\x{2600}-\\x{26FF}|\\x{2700}-\\x{27BF}]")
+        if (emojiRegex.containsMatchIn(message)) return null
+
+        // --- 4. Standard Transaction Validation ---
+        val isExpense = lowerMsg.contains("debited") || lowerMsg.contains("spent") || lowerMsg.contains("paid") || lowerMsg.contains("deducted")
+        val isIncome = lowerMsg.contains("credited") || lowerMsg.contains("received") || lowerMsg.contains("deposited")
 
         // If it's neither, ignore the SMS
         if (!isExpense && !isIncome) return null
 
         val type = if (isIncome) "Income" else "Expense"
 
-        // 2. Extract Amount (Catches ₹, Rs, INR, and variations)
+        // --- 5. Extract Amount ---
         val amountRegex = Regex("(?i)(?:₹|rs\\.?|inr)\\s*([0-9,]+(?:\\.[0-9]+)?)")
         val match = amountRegex.find(lowerMsg)
 
@@ -30,15 +49,16 @@ object PaymentParser {
             val amountStr = match.groupValues[1].replace(",", "")
             val amount = amountStr.toDoubleOrNull() ?: return null
 
-            // 3. Extract Merchant with Bank-Specific Logic
-            val merchant = extractMerchant(message, isIncome)
+            // --- 🛡️ 6. SANITY THRESHOLD ---
+            // If the automated amount is suspiciously massive (e.g., > 10 Lakhs), ignore it to be safe.
+            if (amount > 1000000.0) return null
 
+            val merchant = extractMerchant(message, isIncome)
             return ParsedExpense(amount, merchant, "SMS", type)
         }
         return null
     }
-
-    private fun extractMerchant(message: String, isIncome: Boolean): String {
+        private fun extractMerchant(message: String, isIncome: Boolean): String {
         val singleLineMsg = message.replace("\r", "").replace("\n", " ")
 
         // --- 🚨 NEW: ICICI Standing Instruction / Auto Debit ---
