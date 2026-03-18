@@ -13,10 +13,7 @@ import com.jeevan.expensetracker.R
 class ChartDetailAdapter(private val items: List<ChartItem>) :
     RecyclerView.Adapter<ChartDetailAdapter.ChartViewHolder>() {
 
-    // Tracks which row is currently glowing
     private var highlightedPosition = -1
-
-    // Tracks the scroll animation
     private var lastPosition = -1
 
     class ChartViewHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -25,7 +22,8 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
         val tvCategoryName: TextView = view.findViewById(R.id.tvCategoryName)
         val tvPercentage: TextView = view.findViewById(R.id.tvPercentage)
         val tvAmount: TextView = view.findViewById(R.id.tvAmount)
-        val tvRecovered: TextView = view.findViewById(R.id.tvRecovered) // 🔥 NEW: Recovery badge
+        // 🔥 LINKED: This matches the ID in the XML below
+        val tvRecovered: TextView = view.findViewById(R.id.tvRecovered)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChartViewHolder {
@@ -41,11 +39,9 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
         holder.tvEmoji.text = item.emoji
         holder.tvCategoryName.text = item.category
         holder.tvPercentage.text = String.format("%.1f%%", item.percentage)
-
-        // 🔥 FIX: Renamed from formattedString to formattedAmount to match updated ChartItem
         holder.tvAmount.text = item.formattedAmount
 
-        // 🔥 NEW: Show the "Recovered" badge if money was claimed back for this category
+        // 🔥 LOGIC: Only show the "pill" badge if there's actual recovered money
         if (item.formattedReimbursed.isNotEmpty() &&
             item.formattedReimbursed != "₹0.00" &&
             item.formattedReimbursed != "₹0" &&
@@ -56,14 +52,11 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
             holder.tvRecovered.visibility = View.GONE
         }
 
-        // Trigger the scroll animation engine
         setCascadeAnimation(holder.itemView, position)
 
-        // --- THE MAGIC GLOW LOGIC ---
         if (position == highlightedPosition) {
             val glowColor = Color.argb(40, Color.red(item.color), Color.green(item.color), Color.blue(item.color))
             holder.itemView.setBackgroundColor(glowColor)
-
             holder.itemView.scaleX = 0.95f
             holder.itemView.scaleY = 0.95f
             holder.itemView.animate()
@@ -83,14 +76,12 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
         if (position > lastPosition) {
             viewToAnimate.translationY = 150f
             viewToAnimate.alpha = 0f
-
             viewToAnimate.animate()
                 .translationY(0f)
                 .alpha(1f)
                 .setDuration(350)
                 .setInterpolator(DecelerateInterpolator(1.5f))
                 .start()
-
             lastPosition = position
         } else {
             viewToAnimate.translationY = 0f
@@ -112,12 +103,7 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
     fun setHighlight(position: Int) {
         val previousPosition = highlightedPosition
         highlightedPosition = position
-
-        if (previousPosition != -1) {
-            notifyItemChanged(previousPosition)
-        }
-        if (highlightedPosition != -1) {
-            notifyItemChanged(highlightedPosition)
-        }
+        if (previousPosition != -1) notifyItemChanged(previousPosition)
+        if (highlightedPosition != -1) notifyItemChanged(highlightedPosition)
     }
 }
