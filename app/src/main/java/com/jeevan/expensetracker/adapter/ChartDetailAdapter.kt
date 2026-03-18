@@ -25,6 +25,7 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
         val tvCategoryName: TextView = view.findViewById(R.id.tvCategoryName)
         val tvPercentage: TextView = view.findViewById(R.id.tvPercentage)
         val tvAmount: TextView = view.findViewById(R.id.tvAmount)
+        val tvRecovered: TextView = view.findViewById(R.id.tvRecovered) // 🔥 NEW: Recovery badge
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChartViewHolder {
@@ -40,18 +41,29 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
         holder.tvEmoji.text = item.emoji
         holder.tvCategoryName.text = item.category
         holder.tvPercentage.text = String.format("%.1f%%", item.percentage)
-        holder.tvAmount.text = item.formattedString
+
+        // 🔥 FIX: Renamed from formattedString to formattedAmount to match updated ChartItem
+        holder.tvAmount.text = item.formattedAmount
+
+        // 🔥 NEW: Show the "Recovered" badge if money was claimed back for this category
+        if (item.formattedReimbursed.isNotEmpty() &&
+            item.formattedReimbursed != "₹0.00" &&
+            item.formattedReimbursed != "₹0" &&
+            item.formattedReimbursed != "$0.00") {
+            holder.tvRecovered.visibility = View.VISIBLE
+            holder.tvRecovered.text = "✓ Recovered ${item.formattedReimbursed}"
+        } else {
+            holder.tvRecovered.visibility = View.GONE
+        }
 
         // Trigger the scroll animation engine
         setCascadeAnimation(holder.itemView, position)
 
         // --- THE MAGIC GLOW LOGIC ---
         if (position == highlightedPosition) {
-            // Create a super soft, 15% transparent version of the category's actual color
             val glowColor = Color.argb(40, Color.red(item.color), Color.green(item.color), Color.blue(item.color))
             holder.itemView.setBackgroundColor(glowColor)
 
-            // Give it a tiny "pop" animation so it demands attention
             holder.itemView.scaleX = 0.95f
             holder.itemView.scaleY = 0.95f
             holder.itemView.animate()
@@ -61,17 +73,14 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
                 .setInterpolator(OvershootInterpolator(2f))
                 .start()
         } else {
-            // Reset to normal completely transparent background if not selected
             holder.itemView.setBackgroundColor(Color.TRANSPARENT)
             holder.itemView.scaleX = 1.0f
             holder.itemView.scaleY = 1.0f
         }
     }
 
-    // --- SCROLL ANIMATION ENGINE ---
     private fun setCascadeAnimation(viewToAnimate: View, position: Int) {
         if (position > lastPosition) {
-            // Scrolling DOWN: Slide up and fade in
             viewToAnimate.translationY = 150f
             viewToAnimate.alpha = 0f
 
@@ -84,16 +93,13 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
 
             lastPosition = position
         } else {
-            // Scrolling UP or Refreshing: Snap instantly into place to prevent ghosting
             viewToAnimate.translationY = 0f
             viewToAnimate.alpha = 1f
         }
     }
 
-    // --- CRITICAL RECYCLING FIX ---
     override fun onViewDetachedFromWindow(holder: ChartViewHolder) {
         super.onViewDetachedFromWindow(holder)
-        // If the view goes off-screen mid-animation, kill the animation and reset it!
         holder.itemView.animate().cancel()
         holder.itemView.alpha = 1f
         holder.itemView.translationY = 0f
@@ -101,16 +107,12 @@ class ChartDetailAdapter(private val items: List<ChartItem>) :
         holder.itemView.scaleY = 1f
     }
 
-    override fun getItemCount(): Int {
-        return items.size
-    }
+    override fun getItemCount(): Int = items.size
 
-    // Call this from ChartsActivity to trigger the glow
     fun setHighlight(position: Int) {
         val previousPosition = highlightedPosition
         highlightedPosition = position
 
-        // Only refresh the rows that changed so the list stays lightning fast
         if (previousPosition != -1) {
             notifyItemChanged(previousPosition)
         }

@@ -4,6 +4,7 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:paddingVertical="10dp"
+    android:paddingHorizontal="8dp"
     android:gravity="center_vertical">
 
     <View
@@ -21,16 +22,33 @@
         android:textSize="18sp"
         android:layout_marginEnd="8dp"/>
 
-    <TextView
-        android:id="@+id/tvCategoryName"
+    <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:text="Category"
-        android:textSize="16sp"
-        android:textColor="?android:attr/textColorPrimary"
-        android:maxLines="1"
-        android:ellipsize="end"/>
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvCategoryName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Category"
+            android:textSize="16sp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+
+        <TextView
+            android:id="@+id/tvRecovered"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✓ Recovered ₹0.00"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="#2E7D32"
+            android:visibility="gone"
+            android:layout_marginTop="2dp"/>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/tvPercentage"

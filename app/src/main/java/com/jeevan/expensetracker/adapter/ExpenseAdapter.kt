@@ -1,6 +1,7 @@
 package com.jeevan.expensetracker.adapter
 
 import android.graphics.Color
+import android.content.res.ColorStateList
 import android.view.GestureDetector
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -13,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.R
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.utils.CategoryManager
+import com.google.android.material.card.MaterialCardView
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -42,8 +44,8 @@ class ExpenseAdapter(
         val tvAmount: TextView = itemView.findViewById(R.id.tvAmount)
         val badgeReceipt: View = itemView.findViewById(R.id.badgeReceipt)
 
-        // 🔥 NEW: Billable UI References
-        val badgeBillable: View = itemView.findViewById(R.id.badgeBillable)
+        // 🔥 Billable UI References
+        val badgeBillable: MaterialCardView = itemView.findViewById(R.id.badgeBillable)
         val tvClientName: TextView = itemView.findViewById(R.id.tvClientName)
     }
 
@@ -72,14 +74,35 @@ class ExpenseAdapter(
             holder.tvDescription.text = currentExpense.description
         }
 
-        // --- 🔥 BILLABLE & CLIENT NAME LOGIC ---
+        // --- 🔥 BILLABLE & REIMBURSED LOGIC ---
         if (currentExpense.isBillable) {
             holder.badgeBillable.visibility = View.VISIBLE
-            if (!currentExpense.clientName.isNullOrEmpty()) {
-                holder.tvClientName.visibility = View.VISIBLE
-                holder.tvClientName.text = "Client: ${currentExpense.clientName}"
+
+            // Assuming your TextView inside the badge has the ID tvBillableText
+            val tvBillableLabel = holder.badgeBillable.findViewById<TextView>(R.id.tvBillableText)
+
+            if (currentExpense.isReimbursed) {
+                // ✅ PAID STATE
+                tvBillableLabel?.text = "✅ Reimbursed"
+                holder.badgeBillable.setCardBackgroundColor(ColorStateList.valueOf(Color.parseColor("#2E7D32"))) // Green
+
+                if (!currentExpense.clientName.isNullOrEmpty()) {
+                    holder.tvClientName.visibility = View.VISIBLE
+                    holder.tvClientName.text = "Settled: ${currentExpense.clientName}"
+                } else {
+                    holder.tvClientName.visibility = View.GONE
+                }
             } else {
-                holder.tvClientName.visibility = View.GONE
+                // 💼 UNPAID STATE
+                tvBillableLabel?.text = "💼 Billable"
+                holder.badgeBillable.setCardBackgroundColor(ColorStateList.valueOf(Color.parseColor("#1976D2"))) // Blue
+
+                if (!currentExpense.clientName.isNullOrEmpty()) {
+                    holder.tvClientName.visibility = View.VISIBLE
+                    holder.tvClientName.text = "Client: ${currentExpense.clientName}"
+                } else {
+                    holder.tvClientName.visibility = View.GONE
+                }
             }
         } else {
             holder.badgeBillable.visibility = View.GONE

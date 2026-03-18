@@ -17,7 +17,6 @@
         android:textColor="?android:attr/textColorPrimary"
         android:layout_marginBottom="16dp" />
 
-    <!-- 🔥 SCROLLABLE SECTION: Pins the Save/Cancel buttons to the bottom -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -32,6 +31,7 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
+            <!-- RadioGroup & Amount & Description remain the same... -->
             <RadioGroup
                 android:id="@+id/radioGroupType"
                 android:layout_width="match_parent"
@@ -59,7 +59,6 @@
                     android:buttonTint="#388E3C" />
             </RadioGroup>
 
-            <!-- Amount -->
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
@@ -78,16 +77,14 @@
                     android:inputType="numberDecimal"
                     android:textSize="18sp"
                     android:textStyle="bold"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textColorHint="?android:attr/textColorSecondary" />
+                    android:textColor="?android:attr/textColorPrimary" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- Description -->
             <com.google.android.material.textfield.TextInputLayout
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Description (e.g., Starbucks)"
+                android:hint="Description"
                 android:layout_marginBottom="12dp"
                 app:boxCornerRadiusBottomEnd="16dp"
                 app:boxCornerRadiusBottomStart="16dp"
@@ -99,34 +96,16 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textCapWords"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textColorHint="?android:attr/textColorSecondary" />
+                    android:textColor="?android:attr/textColorPrimary" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Category"
-                android:textSize="12sp"
-                android:textColor="?android:attr/textColorSecondary"
-                android:layout_marginStart="4dp"
-                android:layout_marginBottom="4dp"/>
-
+            <!-- Spinner Category/Recurrence remain same... -->
             <Spinner
                 android:id="@+id/spinnerCategory"
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
                 android:background="@drawable/spinner_background"
                 android:layout_marginBottom="12dp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Recurrence"
-                android:textSize="12sp"
-                android:textColor="?android:attr/textColorSecondary"
-                android:layout_marginStart="4dp"
-                android:layout_marginBottom="4dp"/>
 
             <Spinner
                 android:id="@+id/spinnerRecurrence"
@@ -135,7 +114,7 @@
                 android:background="@drawable/spinner_background"
                 android:layout_marginBottom="16dp" />
 
-            <!-- Billable Switch -->
+            <!-- Billable Section -->
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/switchBillable"
                 android:layout_width="match_parent"
@@ -145,14 +124,14 @@
                 android:textColor="?android:attr/textColorPrimary"
                 android:layout_marginBottom="12dp" />
 
-            <!-- Dynamic Client Field -->
+            <!-- 🔥 Grouped Billable Options -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/layoutClientName"
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="Client / Project Name"
-                android:layout_marginBottom="16dp"
+                android:layout_marginBottom="12dp"
                 android:visibility="gone"
                 app:boxCornerRadiusBottomEnd="16dp"
                 app:boxCornerRadiusBottomStart="16dp"
@@ -164,11 +143,21 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textCapWords"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textColorHint="?android:attr/textColorSecondary" />
+                    android:textColor="?android:attr/textColorPrimary" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- Container for Receipt Actions -->
+            <!-- 🔥 New Reimbursed Switch (Hidden until Billable is ON) -->
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switchReimbursed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Mark as Reimbursed (Paid)"
+                android:textSize="16sp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone" />
+
+            <!-- Receipt Actions & Preview -->
             <LinearLayout
                 android:id="@+id/layoutReceiptActions"
                 android:layout_width="match_parent"
@@ -209,7 +198,7 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- ACTION BUTTONS: Always visible at the bottom -->
+    <!-- Bottom Buttons remain same... -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

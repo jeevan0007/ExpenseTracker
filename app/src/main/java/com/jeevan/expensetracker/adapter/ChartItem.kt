@@ -6,5 +6,6 @@ data class ChartItem(
     val percentage: Float,
     val color: Int,
     val emoji: String,
-    val formattedString: String
+    val formattedAmount: String, // Renamed for clarity
+    val formattedReimbursed: String = "" // 🔥 NEW: Displays recovered funds per category
 )

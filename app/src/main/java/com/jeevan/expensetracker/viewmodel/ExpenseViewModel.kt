@@ -3,7 +3,7 @@ package com.jeevan.expensetracker.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData // 🔥 NEW: Imported this to handle dynamic updates
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.viewModelScope
 import com.jeevan.expensetracker.data.Expense
@@ -17,17 +17,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val repository: ExpenseRepository
     val allExpenses: LiveData<List<Expense>>
 
-    // 🔥 NEW: Make these Mutable so we can update them dynamically based on filters!
     private val _totalIncome = MutableLiveData<Double>(0.0)
     val totalIncome: LiveData<Double> get() = _totalIncome
 
     private val _totalExpenses = MutableLiveData<Double>(0.0)
     val totalExpenses: LiveData<Double> get() = _totalExpenses
 
-    // This "Mediator" is the key. It watches the database AND filters at the same time.
+    // 🔥 NEW: This fixes the "Unresolved reference" in ChartsActivity
+    val totalRecoveredMoney: LiveData<Double?>
+
     val filteredExpenses = MediatorLiveData<List<Expense>>()
 
-    // Filter States
     private var currentSearchQuery: String = ""
     private var currentCategoryFilter: String = "All"
     private var currentDateStart: Long = 0L
@@ -39,10 +39,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         repository = ExpenseRepository(expenseDao)
         allExpenses = repository.allExpenses
 
-        // We REMOVED the direct repository ties for totalIncome and totalExpenses
-        // because they were hardwired to "All Time".
+        // 🔥 NEW: Connect to the repository's new recovery query
+        totalRecoveredMoney = repository.totalRecoveredMoney
 
-        // FIX: Watch the database for changes
         filteredExpenses.addSource(allExpenses) { expenses ->
             applyFilters(expenses)
         }
@@ -52,8 +51,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         repository.insert(expense)
     }
 
-    // --- 🚨 THE NINJA SWAP 🚨 ---
-    // UI thinks it deletes, but it actually soft-deletes to the bin!
     fun delete(expense: Expense) = viewModelScope.launch(Dispatchers.IO) {
         repository.moveToRecycleBin(expense.id, System.currentTimeMillis())
     }
@@ -101,19 +98,16 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         applyFilters(allExpenses.value)
     }
 
-    // Function to get raw list of expenses for exporting
     fun getAllExpensesForExport(): List<Expense>? {
         return allExpenses.value
     }
 
     private fun applyFilters(expenses: List<Expense>?) {
-        // FIX: If the list is null, do nothing.
         if (expenses == null) return
 
-        // FIX: Explicitly tell Kotlin this list is NOT null
         var result: List<Expense> = expenses
 
-        // 1. Apply Search Filter
+        // 1. Search Filter
         if (currentSearchQuery.isNotEmpty()) {
             result = result.filter {
                 it.description.contains(currentSearchQuery, ignoreCase = true) ||
@@ -121,17 +115,16 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 2. Apply Category Filter
+        // 2. Category Filter
         if (currentCategoryFilter != "All" && currentCategoryFilter != "All Categories") {
             result = result.filter { it.category == currentCategoryFilter }
         }
 
-        // 3. Apply Date Range Filter
+        // 3. Date Range Filter
         if (isDateFilterActive) {
             result = result.filter { it.date in currentDateStart..currentDateEnd }
         }
 
-        // 🔥 NEW: Dynamically calculate Income and Expenses for the FILTERED list
         var calculatedIncome = 0.0
         var calculatedExpense = 0.0
 
@@ -139,15 +132,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             if (item.type == "Income") {
                 calculatedIncome += item.amount
             } else if (item.type == "Expense") {
-                calculatedExpense += item.amount
+                // 🔥 SMART MATH:
+                // Only add to "Total Spent" if it's a personal expense
+                // OR if it's billable but you haven't been paid back yet.
+                if (!item.isBillable || !item.isReimbursed) {
+                    calculatedExpense += item.amount
+                }
             }
         }
 
-        // Push the new math to the UI cards
         _totalIncome.value = calculatedIncome
         _totalExpenses.value = calculatedExpense
-
-        // Push the final, filtered list to the screen
         filteredExpenses.value = result
     }
 }

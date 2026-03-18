@@ -1212,20 +1212,23 @@ class MainActivity : AppCompatActivity() {
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
         val btnAttachReceipt = dialogView.findViewById<Button>(R.id.btnAttachReceipt)
 
-        // 🔥 1. Initialize Remove Button
         val btnRemoveReceipt = dialogView.findViewById<Button>(R.id.btnRemoveReceipt)
         currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
 
-        // 🔥 2. Reset State for a fresh "Add"
         tempReceiptUri = null
         btnRemoveReceipt.visibility = android.view.View.GONE
 
+        // 🔥 FIXED: Initialize both Billable AND Reimbursed switches
         val switchBillable = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchBillable)
+        val switchReimbursed = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchReimbursed)
         val layoutClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.layoutClientName)
         val etClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etClientName)
 
+        // Sync visibility for both fields
         switchBillable.setOnCheckedChangeListener { _, isChecked ->
-            layoutClientName.visibility = if (isChecked) android.view.View.VISIBLE else android.view.View.GONE
+            val visibility = if (isChecked) android.view.View.VISIBLE else android.view.View.GONE
+            layoutClientName.visibility = visibility
+            switchReimbursed.visibility = visibility
         }
 
         activeAmountInput = etAmount
@@ -1234,7 +1237,6 @@ class MainActivity : AppCompatActivity() {
             showFullScreenReceipt(tempReceiptUri, null)
         }
 
-        // --- Spinner Setup ---
         val categories = CategoryManager.getCategories(this).map { it.name }.toMutableList()
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -1248,11 +1250,10 @@ class MainActivity : AppCompatActivity() {
         val symbol = java.util.Currency.getInstance(activeCurrencyLocale).symbol
         etAmount.hint = "Amount ($symbol)"
 
-        // 🔥 3. Remove Button Logic for the "Add" session
         applySquishPhysics(btnRemoveReceipt) {
             currentReceiptPreview?.visibility = android.view.View.GONE
             currentReceiptPreview?.setImageDrawable(null)
-            tempReceiptUri = null // This is key: it clears the path before save
+            tempReceiptUri = null
             btnAttachReceipt.text = "📷 Attach Receipt"
             btnRemoveReceipt.visibility = android.view.View.GONE
             vibratePhoneLight()
@@ -1274,6 +1275,9 @@ class MainActivity : AppCompatActivity() {
             val isBillable = switchBillable.isChecked
             val clientName = if (isBillable) etClientName.text.toString().trim() else null
 
+            // 🔥 FIXED: Get the value from the switch before using it
+            val isReimbursedValue = if (isBillable) switchReimbursed.isChecked else false
+
             val rawInput = amountText.toDoubleOrNull()
             var hasError = false
 
@@ -1293,14 +1297,13 @@ class MainActivity : AppCompatActivity() {
 
             if (hasError) {
                 vibratePhone()
-                Toast.makeText(this@MainActivity, "G1 says enter mandatory fields", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Please fill required fields", Toast.LENGTH_SHORT).show()
                 return@applySquishPhysics
             }
 
             expenseBeforeAdd = currentExpense
             val amountInInr = if (isTravelModeActive) rawInput!! / activeCurrencyRate else rawInput!!
 
-            // 🔥 Final check for receipt path
             var finalReceiptPath: String? = null
             tempReceiptUri?.let { uri ->
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
@@ -1317,10 +1320,10 @@ class MainActivity : AppCompatActivity() {
                     type = type,
                     isRecurring = isRecurringFlag,
                     recurrenceType = selectedRecurrence,
-                    receiptPath = finalReceiptPath, // Will be null if Remove was clicked
+                    receiptPath = finalReceiptPath,
                     isBillable = isBillable,
                     clientName = clientName,
-                    isReimbursed = false,
+                    isReimbursed = isReimbursedValue, // 🔥 Now it's resolved!
                     tripId = activeTrip?.tripId
                 )
 
@@ -1369,7 +1372,6 @@ class MainActivity : AppCompatActivity() {
     private fun showEditDialog(expense: Expense) {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_add_expense, null)
 
-        // Material3 Theme Wrapper for proper Dark Mode support
         val dialog = AlertDialog.Builder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog)
             .setView(dialogView)
             .create()
@@ -1390,10 +1392,11 @@ class MainActivity : AppCompatActivity() {
         val btnRemoveReceipt = dialogView.findViewById<Button>(R.id.btnRemoveReceipt)
         currentReceiptPreview = dialogView.findViewById(R.id.ivReceiptPreview)
 
-        // Billable UI
+        // Billable & Reimbursed UI
         val switchBillable = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchBillable)
         val layoutClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.layoutClientName)
         val etClientName = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etClientName)
+        val switchReimbursed = dialogView.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switchReimbursed)
 
         tempReceiptUri = null
         activeAmountInput = etAmount
@@ -1403,15 +1406,21 @@ class MainActivity : AppCompatActivity() {
         etDescription.setText(expense.description)
         radioGroupType.check(if (expense.type == "Income") R.id.radioIncome else R.id.radioExpense)
 
-        // Billable state
+        // 🔥 Populate Billable & Reimbursed states
         switchBillable.isChecked = expense.isBillable
+        switchReimbursed.isChecked = expense.isReimbursed
+
         if (expense.isBillable) {
             layoutClientName.visibility = View.VISIBLE
+            switchReimbursed.visibility = View.VISIBLE
             etClientName.setText(expense.clientName)
         }
 
+        // 🔥 Sync visibility for both fields
         switchBillable.setOnCheckedChangeListener { _, isChecked ->
-            layoutClientName.visibility = if (isChecked) View.VISIBLE else View.GONE
+            val visibility = if (isChecked) View.VISIBLE else View.GONE
+            layoutClientName.visibility = visibility
+            switchReimbursed.visibility = visibility
         }
 
         // Handle existing receipt
@@ -1428,12 +1437,11 @@ class MainActivity : AppCompatActivity() {
 
         // --- BUTTON LOGIC ---
 
-        // Remove Receipt logic
         applySquishPhysics(btnRemoveReceipt) {
             currentReceiptPreview?.visibility = View.GONE
             currentReceiptPreview?.setImageDrawable(null)
             tempReceiptUri = null
-            finalReceiptPath = null // Mark for deletion in DB
+            finalReceiptPath = null
             btnAttachReceipt.text = "📷 Attach Receipt"
             btnRemoveReceipt.visibility = View.GONE
             vibratePhoneLight()
@@ -1442,8 +1450,6 @@ class MainActivity : AppCompatActivity() {
         applySquishPhysics(btnAttachReceipt) {
             isNavigatingInternally = true
             pickReceiptLauncher.launch("image/*")
-            // Note: When a new image is picked, btnRemoveReceipt visibility
-            // should be handled in your activityResultLauncher
         }
 
         // Spinners setup
@@ -1469,6 +1475,7 @@ class MainActivity : AppCompatActivity() {
 
             val isBillable = switchBillable.isChecked
             val clientName = if (isBillable) etClientName.text.toString().trim() else null
+            val isReimbursed = if (isBillable) switchReimbursed.isChecked else false
 
             val amount = amountText.toDoubleOrNull()
             if (amount == null || amount <= 0 || description.isEmpty()) {
@@ -1478,7 +1485,6 @@ class MainActivity : AppCompatActivity() {
                 return@applySquishPhysics
             }
 
-            // Handle new receipt if picked
             tempReceiptUri?.let { uri ->
                 finalReceiptPath = saveReceiptToInternalStorage(uri)
             }
@@ -1491,9 +1497,10 @@ class MainActivity : AppCompatActivity() {
                     type = type,
                     isRecurring = selectedRecurrence != "None",
                     recurrenceType = selectedRecurrence,
-                    receiptPath = finalReceiptPath, // Will be null if "Remove" was clicked
+                    receiptPath = finalReceiptPath,
                     isBillable = isBillable,
-                    clientName = clientName
+                    clientName = clientName,
+                    isReimbursed = isReimbursed // 🔥 Save the state
                 )
             )
             dialog.dismiss()

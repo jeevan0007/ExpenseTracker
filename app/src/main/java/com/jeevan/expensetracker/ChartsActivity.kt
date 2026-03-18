@@ -6,12 +6,10 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
-import android.widget.Button
-import android.widget.ImageButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
-import android.widget.TextView
+import android.widget.*
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -29,8 +27,10 @@ import com.github.mikephil.charting.data.*
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
+import com.github.mikephil.charting.utils.ColorTemplate
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.jeevan.expensetracker.adapter.ChartDetailAdapter
 import com.jeevan.expensetracker.adapter.ChartItem
@@ -38,10 +38,7 @@ import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import java.util.*
 
 class ChartsActivity : AppCompatActivity() {
 
@@ -52,6 +49,10 @@ class ChartsActivity : AppCompatActivity() {
     private lateinit var tvTotalAmount: TextView
     private lateinit var tvPieChartTitle: TextView
 
+    // 🔥 RECOVERY UI
+    private lateinit var tvRecoveredAmount: TextView
+    private lateinit var cardRecovered: MaterialCardView
+
     // --- MASTER DATA & FILTERS ---
     private var masterExpenseList: List<Expense> = emptyList()
     private var chartItemList: List<ChartItem> = ArrayList()
@@ -61,7 +62,7 @@ class ChartsActivity : AppCompatActivity() {
     private var chartStartTime: Long = 0L
     private var chartEndTime: Long = Long.MAX_VALUE
 
-    // --- CURRENCY STATE (Global Variables) ---
+    // --- CURRENCY STATE ---
     private var activeRate: Double = 1.0
     private lateinit var activeFormat: NumberFormat
 
@@ -79,9 +80,15 @@ class ChartsActivity : AppCompatActivity() {
         val filterBar = findViewById<View>(R.id.filterBar)
         val scrollView = findViewById<ScrollView>(R.id.chartsScrollView)
 
+        // 🔥 FIX: Linked the new UI IDs
+        tvRecoveredAmount = findViewById(R.id.tvRecoveredAmount)
+        cardRecovered = findViewById(R.id.cardRecovered)
+
         ViewCompat.setOnApplyWindowInsetsListener(headerLayout) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(view.paddingLeft, systemBars.top + dpToPx(16), view.paddingRight, view.paddingBottom)
+            val params = view.layoutParams as ViewGroup.MarginLayoutParams
+            params.topMargin = systemBars.top + dpToPx(16)
+            view.layoutParams = params
             insets
         }
 
@@ -115,10 +122,31 @@ class ChartsActivity : AppCompatActivity() {
         setThisMonthFilterSilently()
 
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
+
         expenseViewModel.allExpenses.observe(this) { expenses ->
             if (expenses != null) {
                 masterExpenseList = expenses
                 refreshCharts()
+            }
+        }
+
+        // 🔥 FIX: Added explicit type (Double?) and safety check
+        expenseViewModel.totalRecoveredMoney.observe(this) { recovered: Double? ->
+            val amount = recovered ?: 0.0
+            if (amount > 0 && isExpenseMode) {
+                cardRecovered.visibility = View.VISIBLE
+                tvRecoveredAmount.text = activeFormat.format(amount * activeRate)
+
+                cardRecovered.alpha = 0f
+                cardRecovered.translationY = 20f
+                cardRecovered.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(500)
+                    .setInterpolator(OvershootInterpolator())
+                    .start()
+            } else {
+                cardRecovered.visibility = View.GONE
             }
         }
     }
@@ -131,6 +159,9 @@ class ChartsActivity : AppCompatActivity() {
             if (isChecked) {
                 isExpenseMode = (checkedId == R.id.btnFilterExpense)
                 tvPieChartTitle.text = if (isExpenseMode) "Spending by Category" else "Income by Source"
+
+                if (!isExpenseMode) cardRecovered.visibility = View.GONE
+
                 refreshCharts()
             }
         }
@@ -156,12 +187,18 @@ class ChartsActivity : AppCompatActivity() {
 
     private fun setupPieChartAndList(expenses: List<Expense>) {
         val categoryMap = HashMap<String, Double>()
+        val reimbursedMap = HashMap<String, Double>()
         totalFilteredAmount = 0.0
 
         for (expense in expenses) {
             val current = categoryMap.getOrDefault(expense.category, 0.0)
             categoryMap[expense.category] = current + expense.amount
             totalFilteredAmount += expense.amount
+
+            if (expense.isBillable && expense.isReimbursed) {
+                val currentReimbursed = reimbursedMap.getOrDefault(expense.category, 0.0)
+                reimbursedMap[expense.category] = currentReimbursed + expense.amount
+            }
         }
 
         val sortedCategories = categoryMap.entries.sortedByDescending { it.value }
@@ -170,22 +207,20 @@ class ChartsActivity : AppCompatActivity() {
         val chartItems = ArrayList<ChartItem>()
         val palette = getChartColors()
 
-        // 🔥 NEW: Fetch the dynamic categories right before drawing the chart
         val dynamicEmojis = com.jeevan.expensetracker.utils.CategoryManager.getCategories(this).associate { it.name to it.emoji }
 
         if (totalFilteredAmount > 0) {
             sortedCategories.forEachIndexed { index, entry ->
                 val percentage = (entry.value / totalFilteredAmount * 100).toFloat()
                 val color = palette[index % palette.size]
-
-                // 🔥 NEW: Look up the custom emoji, or default to a money bag
                 val emoji = dynamicEmojis[entry.key] ?: "💰"
 
                 val convertedAmount = entry.value * activeRate
                 val formattedString = activeFormat.format(convertedAmount)
+                val recoveredString = activeFormat.format((reimbursedMap[entry.key] ?: 0.0) * activeRate)
 
                 entries.add(PieEntry(convertedAmount.toFloat(), entry.key))
-                chartItems.add(ChartItem(entry.key, convertedAmount, percentage, color, emoji, formattedString))
+                chartItems.add(ChartItem(entry.key, convertedAmount, percentage, color, emoji, formattedString, recoveredString))
             }
         } else {
             entries.add(PieEntry(1f, "No Data"))
@@ -300,7 +335,6 @@ class ChartsActivity : AppCompatActivity() {
         customTypeface?.let { xAxis.typeface = it }
 
         barChart.axisLeft.axisMinimum = 0f
-        // 🔥 FIX: Add top spacing so the text values don't get chopped off!
         barChart.axisLeft.spaceTop = 20f
         barChart.axisLeft.textColor = if (isDarkMode()) Color.WHITE else Color.BLACK
         barChart.axisLeft.setDrawGridLines(true)
@@ -351,7 +385,6 @@ class ChartsActivity : AppCompatActivity() {
                     chartEndTime = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
                     btnDateFilter.text = "This Week"
                 }
-                // 🔥 FIX: Re-wired the Custom option properly!
                 R.id.radioCustom -> {
                     dialog.dismiss()
                     showCustomDateRangePicker(btnDateFilter)
@@ -366,7 +399,6 @@ class ChartsActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // 🔥 FIX: Copied the calendar picker over from MainActivity
     private fun showCustomDateRangePicker(btnDateFilter: MaterialButton) {
         val datePicker = MaterialDatePicker.Builder.dateRangePicker()
             .setTitleText("Select Date Range")
@@ -417,7 +449,6 @@ class ChartsActivity : AppCompatActivity() {
         )
     }
 
-    // 🔥 FIX: 100% reliable System Dark Mode detection
     private fun isDarkMode(): Boolean {
         val currentNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         return currentNightMode == Configuration.UI_MODE_NIGHT_YES
