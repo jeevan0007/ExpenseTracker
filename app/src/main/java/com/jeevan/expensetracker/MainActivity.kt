@@ -20,6 +20,7 @@ import android.os.VibratorManager
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -28,6 +29,7 @@ import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.*
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -124,7 +126,7 @@ class MainActivity : AppCompatActivity() {
     private var authPrompt: BiometricPrompt? = null
 
     // Modern Photo Picker Launcher
-    private val pickReceiptLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
+    private val pickReceiptLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
         uri?.let {
             tempReceiptUri = it
             currentReceiptPreview?.apply {
@@ -150,6 +152,17 @@ class MainActivity : AppCompatActivity() {
             processReceiptImage(it)
         }
     }
+
+    // --- NOTIFICATION PERMISSION REQUEST (ANDROID 13+) ---
+    private val requestNotificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                Log.d("MainActivity", "POST_NOTIFICATIONS permission granted.")
+            } else {
+                Toast.makeText(this, "Notifications disabled. You won't see expense alerts.", Toast.LENGTH_LONG).show()
+                Log.w("MainActivity", "POST_NOTIFICATIONS permission denied.")
+            }
+        }
 
     // 🔥 THE ML KIT RECEIPT SCANNER ENGINE
     private fun processReceiptImage(uri: android.net.Uri) {
@@ -606,6 +619,32 @@ class MainActivity : AppCompatActivity() {
         headerCard.animate().translationY(0f).alpha(1f).setDuration(800).setInterpolator(OvershootInterpolator(1.2f)).start()
 
         checkAndRequestPermissions()
+        // --- CHECK AND REQUEST PERMISSIONS ON STARTUP ---
+        checkNotificationPermission()
+    }
+
+    // --- HELPER FUNCTION FOR PERMISSION ---
+    private fun checkNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    // Permission is already granted
+                    Log.d("MainActivity", "Notification permission already granted.")
+                }
+                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
+                    // Explain to the user why we need the permission, then request it
+                    Toast.makeText(this, "We need notification permission to alert you when expenses are auto-logged.", Toast.LENGTH_LONG).show()
+                    requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                else -> {
+                    // Directly ask for the permission
+                    requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
     }
 
     private fun updateAllStealthUI() {
