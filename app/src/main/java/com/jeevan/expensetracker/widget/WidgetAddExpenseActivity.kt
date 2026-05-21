@@ -4,28 +4,28 @@ import android.os.Bundle
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputEditText
 import com.jeevan.expensetracker.R
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
-import kotlinx.coroutines.CoroutineScope
+import com.jeevan.expensetracker.utils.CategoryManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class WidgetAddExpenseActivity : AppCompatActivity() {
 
-    // --- RECEIPT ENGINE VARIABLES ---
     private var tempReceiptUri: android.net.Uri? = null
     private var currentReceiptPreview: ImageView? = null
 
-    // The Modern Photo Picker specifically for the Widget
-    private val pickReceiptLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
+    private val pickReceiptLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
         uri?.let {
             tempReceiptUri = it
             currentReceiptPreview?.apply {
                 visibility = View.VISIBLE
                 setImageURI(it)
-                // Smooth pop-in animation
                 scaleX = 0f
                 scaleY = 0f
                 animate().scaleX(1f).scaleY(1f).setDuration(300).start()
@@ -52,16 +52,14 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
         val etDescription = findViewById<TextInputEditText>(R.id.etDescription)
         val spinnerCategory = findViewById<Spinner>(R.id.spinnerCategory)
         val spinnerRecurrence = findViewById<Spinner>(R.id.spinnerRecurrence)
-
         val btnSave = findViewById<Button>(R.id.btnSave)
         val btnCancel = findViewById<Button>(R.id.btnCancel)
-
-        // 🔥 NEW: Grab the Receipt Button & Image View
         val btnAttachReceipt = findViewById<Button>(R.id.btnAttachReceipt)
         currentReceiptPreview = findViewById(R.id.ivReceiptPreview)
 
-        val categories = resources.getStringArray(R.array.categories).toMutableList()
-        categories.addAll(listOf("Rent", "Fuel", "Salary", "Automated"))
+        // FIX: use CategoryManager instead of the hardcoded XML array so custom
+        // categories created by the user actually appear in the widget spinner.
+        val categories = CategoryManager.getCategories(this).map { it.name }
         val spinnerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, categories)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
@@ -71,7 +69,6 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
         recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerRecurrence.adapter = recurrenceAdapter
 
-        // 🔥 NEW: Launch Gallery on Click
         btnAttachReceipt.setOnClickListener {
             pickReceiptLauncher.launch("image/*")
         }
@@ -81,7 +78,6 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
             val description = etDescription.text.toString()
             val category = spinnerCategory.selectedItem.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
-
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
             val isRecurringFlag = selectedRecurrence != "None"
 
@@ -91,14 +87,13 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // 🔥 NEW: Save the image to secure internal storage before writing to DB
-            var finalReceiptPath: String? = null
-            tempReceiptUri?.let { uri ->
-                finalReceiptPath = saveReceiptToInternalStorage(uri)
-            }
+            // FIX: use lifecycleScope instead of a bare CoroutineScope so the
+            // coroutine is cancelled if the activity is destroyed before it finishes.
+            lifecycleScope.launch(Dispatchers.IO) {
+                // Save receipt to internal storage on IO thread (not main thread)
+                val finalReceiptPath = tempReceiptUri?.let { saveReceiptToInternalStorage(it) }
 
-            val db = ExpenseDatabase.getDatabase(this)
-            CoroutineScope(Dispatchers.IO).launch {
+                val db = ExpenseDatabase.getDatabase(this@WidgetAddExpenseActivity)
                 db.expenseDao().insert(
                     Expense(
                         amount = amount,
@@ -107,34 +102,35 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
                         type = type,
                         isRecurring = isRecurringFlag,
                         recurrenceType = selectedRecurrence,
-                        receiptPath = finalReceiptPath, // Include the image path!
+                        receiptPath = finalReceiptPath,
                         date = System.currentTimeMillis()
                     )
                 )
+
+                // Switch back to main thread to show Toast and close
+                launch(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@WidgetAddExpenseActivity,
+                        "Expense Logged!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    finish()
+                }
             }
-
-            Toast.makeText(this, "Expense Logged!", Toast.LENGTH_SHORT).show()
-            finish()
         }
 
-        btnCancel.setOnClickListener {
-            finish()
-        }
+        btnCancel.setOnClickListener { finish() }
     }
 
-    // 🔥 NEW: The Secure Vault logic for the Widget
     private fun saveReceiptToInternalStorage(uri: android.net.Uri): String? {
         return try {
             val inputStream = contentResolver.openInputStream(uri) ?: return null
             val fileName = "receipt_widget_${System.currentTimeMillis()}.jpg"
             val file = java.io.File(filesDir, fileName)
             val outputStream = java.io.FileOutputStream(file)
-
             inputStream.copyTo(outputStream)
-
             inputStream.close()
             outputStream.close()
-
             file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()

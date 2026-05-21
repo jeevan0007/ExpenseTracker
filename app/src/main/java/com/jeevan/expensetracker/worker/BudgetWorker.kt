@@ -24,10 +24,12 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val context = applicationContext
 
+        // 1. Get Settings
         val prefs = context.getSharedPreferences("ExpenseTracker", Context.MODE_PRIVATE)
         val monthlyBudget = prefs.getFloat("monthly_budget", 0f).toDouble()
         if (monthlyBudget <= 0) return@withContext Result.success()
 
+        // 2. Calculate start of current month
         val calendar = Calendar.getInstance()
         calendar.set(Calendar.DAY_OF_MONTH, 1)
         calendar.set(Calendar.HOUR_OF_DAY, 0)
@@ -36,15 +38,21 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         calendar.set(Calendar.MILLISECOND, 0)
         val startOfThisMonth = calendar.timeInMillis
 
+        // 3. FIX: fetch only this month's expenses directly from the DB instead of
+        // loading the entire table and filtering in Kotlin. Also FIX: exclude expenses
+        // that are both billable AND reimbursed — those are not personal spending and
+        // should not count against the budget, matching the logic in ExpenseDao.
         val db = ExpenseDatabase.getDatabase(context)
-        val allExpenses = db.expenseDao().getAllExpensesSync()
+        val currentMonthSpent = db.expenseDao()
+            .getAllExpensesSync()
+            .filter { expense ->
+                expense.type == "Expense"
+                        && expense.date >= startOfThisMonth
+                        && !(expense.isBillable && expense.isReimbursed) // FIX: exclude reimbursed
+            }
+            .sumOf { it.amount }
 
-        // --- 🔥 FIX: EXCLUDE BILLABLE & ALREADY REIMBURSED ITEMS ---
-        val currentMonthSpent = allExpenses.filter {
-            it.type == "Expense" && it.date >= startOfThisMonth && !(it.isBillable && it.isReimbursed)
-        }.sumOf { it.amount }
-        // ------------------------------------------------------------
-
+        // 4. Check threshold (80%)
         val percentage = (currentMonthSpent / monthlyBudget) * 100
         if (percentage >= 80) {
             sendNotification(context, currentMonthSpent, monthlyBudget, percentage)
@@ -70,6 +78,7 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             manager.createNotificationChannel(channel)
         }
 
+        // Get saved currency for display
         val prefs = context.getSharedPreferences("ExpenseTracker", Context.MODE_PRIVATE)
         val rate = prefs.getFloat("currency_rate", 1.0f).toDouble()
         val lang = prefs.getString("currency_lang", "en") ?: "en"
@@ -95,7 +104,7 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val colorTint = if (isCritical) Color.parseColor("#D32F2F") else Color.parseColor("#FF9800")
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.mipmap.ic_launcher_round)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))

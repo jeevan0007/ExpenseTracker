@@ -1224,29 +1224,19 @@ class MainActivity : AppCompatActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
         }
-
-        // --- 🔥 FIX: GATED NOTIFICATION LISTENER SETTINGS PROMPT ---
-        val sharedPrefs = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
-        val hasDismissedPrompt = sharedPrefs.getBoolean("has_dismissed_listener_prompt", false)
-
-        if (!isNotificationServiceEnabled() && !hasDismissedPrompt) {
-            val dialogBuilder = AlertDialog.Builder(this)
-            dialogBuilder.setTitle("🧠 Auto-Track UPI Payments")
-            dialogBuilder.setMessage("Enable Notification Access for Expense Tracker to automatically read and organize your transactional apps like GPay or PhonePe instantly.")
-            dialogBuilder.setPositiveButton("Configure") { _, _ ->
-                isNavigatingInternally = true
-                val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                startActivity(intent)
-            }
-            dialogBuilder.setNegativeButton("Maybe Later") { d, _ ->
-                sharedPrefs.edit().putBoolean("has_dismissed_listener_prompt", true).apply()
-                d.dismiss()
-            }
-            val alert = dialogBuilder.create()
-            alert.window?.attributes?.windowAnimations = R.style.DialogAnimation
-            alert.show()
+        // FIX: show an explanatory dialog before bouncing the user to system settings.
+        // The old code jumped straight to Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+        // on every cold start if access wasn't granted, which is jarring and confusing.
+        if (!isNotificationServiceEnabled()) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Enable UPI Auto-Tracking")
+                .setMessage("To automatically log UPI payments from apps like GPay and PhonePe, please grant Notification Access to Expense Tracker.")
+                .setPositiveButton("Grant Access") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+                .setNegativeButton("Not Now", null)
+                .show()
         }
-        // -----------------------------------------------------------
     }
 
     private fun isNotificationServiceEnabled(): Boolean {
@@ -1361,12 +1351,13 @@ class MainActivity : AppCompatActivity() {
             expenseBeforeAdd = currentExpense
             val amountInInr = if (isTravelModeActive) rawInput!! / activeCurrencyRate else rawInput!!
 
-            var finalReceiptPath: String? = null
-            tempReceiptUri?.let { uri ->
-                finalReceiptPath = saveReceiptToInternalStorage(uri)
-            }
-
             lifecycleScope.launch(Dispatchers.IO) {
+                // FIX: receipt save moved inside the IO coroutine — file I/O must
+                // not run on the main thread as it can cause ANR on slow storage.
+                val finalReceiptPath = tempReceiptUri?.let { uri ->
+                    saveReceiptToInternalStorage(uri)
+                }
+
                 val db = ExpenseDatabase.getDatabase(this@MainActivity)
                 val activeTrip = db.expenseDao().getActiveTrip()
 
@@ -1380,7 +1371,7 @@ class MainActivity : AppCompatActivity() {
                     receiptPath = finalReceiptPath,
                     isBillable = isBillable,
                     clientName = clientName,
-                    isReimbursed = isReimbursedValue, // 🔥 Now it's resolved!
+                    isReimbursed = isReimbursedValue,
                     tripId = activeTrip?.tripId
                 )
 
@@ -1542,25 +1533,31 @@ class MainActivity : AppCompatActivity() {
                 return@applySquishPhysics
             }
 
-            tempReceiptUri?.let { uri ->
-                finalReceiptPath = saveReceiptToInternalStorage(uri)
-            }
+            // FIX: receipt save and DB update both moved into an IO coroutine so
+            // file I/O never blocks the main thread.
+            lifecycleScope.launch(Dispatchers.IO) {
+                val resolvedReceiptPath = tempReceiptUri?.let { uri ->
+                    saveReceiptToInternalStorage(uri)
+                } ?: finalReceiptPath
 
-            expenseViewModel.update(
-                expense.copy(
-                    amount = amount,
-                    category = spinnerCategory.selectedItem.toString(),
-                    description = description,
-                    type = type,
-                    isRecurring = selectedRecurrence != "None",
-                    recurrenceType = selectedRecurrence,
-                    receiptPath = finalReceiptPath,
-                    isBillable = isBillable,
-                    clientName = clientName,
-                    isReimbursed = isReimbursed // 🔥 Save the state
-                )
-            )
-            dialog.dismiss()
+                withContext(Dispatchers.Main) {
+                    expenseViewModel.update(
+                        expense.copy(
+                            amount = amount,
+                            category = spinnerCategory.selectedItem.toString(),
+                            description = description,
+                            type = type,
+                            isRecurring = selectedRecurrence != "None",
+                            recurrenceType = selectedRecurrence,
+                            receiptPath = resolvedReceiptPath,
+                            isBillable = isBillable,
+                            clientName = clientName,
+                            isReimbursed = isReimbursed
+                        )
+                    )
+                    dialog.dismiss()
+                }
+            }
             if (type == "Expense") shouldCheckBudget = true
         }
 

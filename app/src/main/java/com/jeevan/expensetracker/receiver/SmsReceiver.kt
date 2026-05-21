@@ -20,77 +20,95 @@ import kotlinx.coroutines.launch
 class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
-            val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
-            val smsBodyBuilder = StringBuilder()
-            var sender = "Unknown"
-            for (sms in messages) {
-                smsBodyBuilder.append(sms.messageBody ?: "")
-                sender = sms.originatingAddress ?: "Unknown"
-            }
-            val body = smsBodyBuilder.toString()
+        val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
 
-            val parsedExpense = PaymentParser.parseSms(body, sender)
+        // Group multipart SMS into a single string to prevent double-parsing long messages
+        val smsBodyBuilder = StringBuilder()
+        var sender = "Unknown"
+        for (sms in messages) {
+            smsBodyBuilder.append(sms.messageBody ?: "")
+            sender = sms.originatingAddress ?: "Unknown"
+        }
+        val body = smsBodyBuilder.toString()
 
-            if (parsedExpense != null) {
-                val finalDescription = if (parsedExpense.merchant == "Unknown") {
-                    "Automated ($sender)"
-                } else {
-                    parsedExpense.merchant
+        // 1. Send the raw message to the Central Brain (PaymentParser)
+        val parsedExpense = PaymentParser.parseSms(body, sender) ?: return
+
+        // --- THE 60-SECOND GLOBAL DUPLICATE BLOCKER ---
+        val sharedPref = context.getSharedPreferences("ExpenseDebounce", Context.MODE_PRIVATE)
+        val lastAmount = sharedPref.getFloat("last_amount", -1f)
+        val lastTime = sharedPref.getLong("last_time", 0L)
+        val lastType = sharedPref.getString("last_type", "")
+        val currentTime = System.currentTimeMillis()
+
+        if (lastAmount == parsedExpense.amount.toFloat()
+            && lastType == parsedExpense.type
+            && (currentTime - lastTime) < 60000
+        ) {
+            Log.d("SmsReceiver", "Duplicate Bank SMS ignored to prevent double-logging.")
+            return
+        }
+
+        // FIX: use apply() instead of commit() — non-blocking, safe to call here
+        sharedPref.edit()
+            .putFloat("last_amount", parsedExpense.amount.toFloat())
+            .putLong("last_time", currentTime)
+            .putString("last_type", parsedExpense.type)
+            .apply()
+
+        // Fallback description if the parser returns "Unknown"
+        val finalDescription = if (parsedExpense.merchant == "Unknown") {
+            "Automated ($sender)"
+        } else {
+            parsedExpense.merchant
+        }
+
+        // FIX: use goAsync() to keep the process alive while the coroutine runs,
+        // preventing a silent DB insert loss if the system kills the receiver early.
+        val pendingResult = goAsync()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val db = ExpenseDatabase.getDatabase(context)
+
+                // --- ON-DEVICE AI PREDICTION ---
+                var smartCategory = db.expenseDao().predictCategoryForMerchant(finalDescription)
+
+                // If the AI has no history of this merchant, fallback to keyword detection
+                if (smartCategory == null) {
+                    smartCategory = detectCategory(finalDescription)
                 }
 
-                // --- 🔥 FIX: COMPOSITE TRANSACTION FINGERPRINT DEBOUNCER ---
-                val sharedPref = context.getSharedPreferences("ExpenseDebounce", Context.MODE_PRIVATE)
-                val currentTime = System.currentTimeMillis()
+                // --- TRIP & PROJECT CHECK ---
+                val activeTrip = db.expenseDao().getActiveTrip()
+                val currentTripId = activeTrip?.tripId
 
-                // Construct a unique key using amount, classification, and specific merchant tracking info
-                val cleanMerchantId = finalDescription.lowercase().replace("\\s+".toRegex(), "")
-                val fingerprintKey = "tx_${parsedExpense.amount}_${parsedExpense.type}_$cleanMerchantId"
+                db.expenseDao().insert(
+                    Expense(
+                        amount = parsedExpense.amount,
+                        category = smartCategory,
+                        description = finalDescription,
+                        type = parsedExpense.type,
+                        isRecurring = false,
+                        date = System.currentTimeMillis(),
+                        tripId = currentTripId
+                    )
+                )
 
-                val lastTimeForFingerprint = sharedPref.getLong(fingerprintKey, 0L)
-
-                if ((currentTime - lastTimeForFingerprint) < 60000) {
-                    Log.d("SmsReceiver", "Duplicate fingerprint detected ($fingerprintKey). Transaction ignored.")
-                    return
-                }
-
-                // Synchronously lock this unique fingerprint to block simultaneous bank alerts
-                sharedPref.edit()
-                    .putLong(fingerprintKey, currentTime)
-                    .commit()
-                // ------------------------------------------------------------
-
-                try {
-                    val db = ExpenseDatabase.getDatabase(context)
-
-                    CoroutineScope(Dispatchers.IO).launch {
-                        var smartCategory = db.expenseDao().predictCategoryForMerchant(finalDescription)
-
-                        if (smartCategory == null) {
-                            smartCategory = detectCategory(finalDescription)
-                        }
-
-                        val activeTrip = db.expenseDao().getActiveTrip()
-                        val currentTripId = activeTrip?.tripId
-
-                        db.expenseDao().insert(
-                            Expense(
-                                amount = parsedExpense.amount,
-                                category = smartCategory,
-                                description = finalDescription,
-                                type = parsedExpense.type,
-                                isRecurring = false,
-                                date = System.currentTimeMillis(),
-                                tripId = currentTripId
-                            )
-                        )
-
-                        showSuccessNotification(context, parsedExpense.amount, finalDescription, smartCategory, parsedExpense.type)
-                    }
-                } catch (e: Exception) {
-                    Log.e("SmsReceiver", "Database error: ${e.message}")
-                }
+                showSuccessNotification(
+                    context,
+                    parsedExpense.amount,
+                    finalDescription,
+                    smartCategory,
+                    parsedExpense.type
+                )
+            } catch (e: Exception) {
+                Log.e("SmsReceiver", "Database error: ${e.message}")
+            } finally {
+                // FIX: always finish() the pendingResult so the system knows we're done
+                pendingResult.finish()
             }
         }
     }
@@ -106,8 +124,15 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun showSuccessNotification(context: Context, amount: Double, merchant: String, category: String, type: String) {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private fun showSuccessNotification(
+        context: Context,
+        amount: Double,
+        merchant: String,
+        category: String,
+        type: String
+    ) {
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "expense_logged_channel"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
