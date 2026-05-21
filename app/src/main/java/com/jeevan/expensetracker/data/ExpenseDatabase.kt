@@ -16,6 +16,15 @@ abstract class ExpenseDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: ExpenseDatabase? = null
 
+        // Migration 1-2 (no schema change — safety bridge so Room can walk any
+        // device that installed v1 before v2 shipped, rather than crashing with
+        // a missing-migration exception)
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No-op: no schema changes were made between version 1 and 2
+            }
+        }
+
         // Migrations 1-3 (Receipts)
         val MIGRATION_1_3 = object : Migration(1, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -80,9 +89,9 @@ abstract class ExpenseDatabase : RoomDatabase() {
                     "expense_database"
                 )
                     .addMigrations(
+                        MIGRATION_1_2,
                         MIGRATION_1_3,
                         MIGRATION_2_3,
-                        // Note: If you have gaps (like 1 to 3), ensure all paths are covered
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
