@@ -1224,11 +1224,29 @@ class MainActivity : AppCompatActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
         }
-        if (!isNotificationServiceEnabled()) {
-            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            startActivity(intent)
-            Toast.makeText(this, "Enable Notification Access to track UPI automatically", Toast.LENGTH_LONG).show()
+
+        // --- 🔥 FIX: GATED NOTIFICATION LISTENER SETTINGS PROMPT ---
+        val sharedPrefs = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        val hasDismissedPrompt = sharedPrefs.getBoolean("has_dismissed_listener_prompt", false)
+
+        if (!isNotificationServiceEnabled() && !hasDismissedPrompt) {
+            val dialogBuilder = AlertDialog.Builder(this)
+            dialogBuilder.setTitle("🧠 Auto-Track UPI Payments")
+            dialogBuilder.setMessage("Enable Notification Access for Expense Tracker to automatically read and organize your transactional apps like GPay or PhonePe instantly.")
+            dialogBuilder.setPositiveButton("Configure") { _, _ ->
+                isNavigatingInternally = true
+                val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                startActivity(intent)
+            }
+            dialogBuilder.setNegativeButton("Maybe Later") { d, _ ->
+                sharedPrefs.edit().putBoolean("has_dismissed_listener_prompt", true).apply()
+                d.dismiss()
+            }
+            val alert = dialogBuilder.create()
+            alert.window?.attributes?.windowAnimations = R.style.DialogAnimation
+            alert.show()
         }
+        // -----------------------------------------------------------
     }
 
     private fun isNotificationServiceEnabled(): Boolean {

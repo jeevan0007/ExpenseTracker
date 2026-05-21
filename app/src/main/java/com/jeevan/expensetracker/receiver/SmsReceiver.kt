@@ -23,7 +23,6 @@ class SmsReceiver : BroadcastReceiver() {
         if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
             val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
 
-            // Group multipart SMS into a single string to prevent double-parsing long messages
             val smsBodyBuilder = StringBuilder()
             var sender = "Unknown"
             for (sms in messages) {
@@ -32,53 +31,46 @@ class SmsReceiver : BroadcastReceiver() {
             }
             val body = smsBodyBuilder.toString()
 
-            // 1. Send the raw message to the Central Brain (PaymentParser)
             val parsedExpense = PaymentParser.parseSms(body, sender)
 
-            // 2. If the brain successfully extracted money and merchant...
             if (parsedExpense != null) {
-
-                // --- THE 60-SECOND GLOBAL DUPLICATE BLOCKER ---
-                val sharedPref = context.getSharedPreferences("ExpenseDebounce", Context.MODE_PRIVATE)
-                val lastAmount = sharedPref.getFloat("last_amount", -1f)
-                val lastTime = sharedPref.getLong("last_time", 0L)
-                val lastType = sharedPref.getString("last_type", "")
-                val currentTime = System.currentTimeMillis()
-
-                // If the exact same amount and type is processed within 60 seconds, ignore it!
-                if (lastAmount == parsedExpense.amount.toFloat() && lastType == parsedExpense.type && (currentTime - lastTime) < 60000) {
-                    Log.d("SmsReceiver", "Duplicate Bank SMS ignored to prevent double-logging.")
-                    return // Skip entirely
+                val finalDescription = if (parsedExpense.merchant == "Unknown") {
+                    "Automated ($sender)"
+                } else {
+                    parsedExpense.merchant
                 }
 
-                // Save this new transaction to memory to block future duplicates
+                // --- 🔥 FIX: COMPOSITE TRANSACTION FINGERPRINT DEBOUNCER ---
+                val sharedPref = context.getSharedPreferences("ExpenseDebounce", Context.MODE_PRIVATE)
+                val currentTime = System.currentTimeMillis()
+
+                // Construct a unique key using amount, classification, and specific merchant tracking info
+                val cleanMerchantId = finalDescription.lowercase().replace("\\s+".toRegex(), "")
+                val fingerprintKey = "tx_${parsedExpense.amount}_${parsedExpense.type}_$cleanMerchantId"
+
+                val lastTimeForFingerprint = sharedPref.getLong(fingerprintKey, 0L)
+
+                if ((currentTime - lastTimeForFingerprint) < 60000) {
+                    Log.d("SmsReceiver", "Duplicate fingerprint detected ($fingerprintKey). Transaction ignored.")
+                    return
+                }
+
+                // Synchronously lock this unique fingerprint to block simultaneous bank alerts
                 sharedPref.edit()
-                    .putFloat("last_amount", parsedExpense.amount.toFloat())
-                    .putLong("last_time", currentTime)
-                    .putString("last_type", parsedExpense.type)
+                    .putLong(fingerprintKey, currentTime)
                     .commit()
-                // ---------------------------------------
+                // ------------------------------------------------------------
 
                 try {
                     val db = ExpenseDatabase.getDatabase(context)
 
-                    // Fallback description if the parser returns "Unknown"
-                    val finalDescription = if (parsedExpense.merchant == "Unknown") {
-                        "Automated ($sender)"
-                    } else {
-                        parsedExpense.merchant
-                    }
-
                     CoroutineScope(Dispatchers.IO).launch {
-                        // --- ON-DEVICE AI PREDICTION ---
                         var smartCategory = db.expenseDao().predictCategoryForMerchant(finalDescription)
 
-                        // If the AI has no history of this merchant, fallback to keyword detection
                         if (smartCategory == null) {
                             smartCategory = detectCategory(finalDescription)
                         }
 
-                        // --- TRIP & PROJECT CHECK ---
                         val activeTrip = db.expenseDao().getActiveTrip()
                         val currentTripId = activeTrip?.tripId
 
@@ -94,7 +86,6 @@ class SmsReceiver : BroadcastReceiver() {
                             )
                         )
 
-                        // 🔥 NEW: Trigger the Beautiful UI Notification
                         showSuccessNotification(context, parsedExpense.amount, finalDescription, smartCategory, parsedExpense.type)
                     }
                 } catch (e: Exception) {
@@ -119,7 +110,6 @@ class SmsReceiver : BroadcastReceiver() {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "expense_logged_channel"
 
-        // Create the NotificationChannel for Android O and above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
@@ -136,7 +126,7 @@ class SmsReceiver : BroadcastReceiver() {
         val titleText = if (type.lowercase() == "income") "💰 Income Tracked!" else "💸 Expense Tracked!"
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher_round) // Using your app's icon
+            .setSmallIcon(R.mipmap.ic_launcher_round)
             .setContentTitle(titleText)
             .setContentText("$formattedAmount $actionText $merchant")
             .setStyle(
@@ -147,7 +137,6 @@ class SmsReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .build()
 
-        // Use a unique ID so multiple back-to-back expenses show separate notifications
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 }

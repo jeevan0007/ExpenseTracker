@@ -27,49 +27,42 @@ class UpiNotificationListener : NotificationListenerService() {
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
         val text = extras.getString(Notification.EXTRA_TEXT) ?: ""
 
-        // 1. Send the raw notification to the Central Brain (PaymentParser)
         val parsedExpense = PaymentParser.parseNotification(packageName, title, text)
 
-        // 2. If the brain successfully found a transaction...
         if (parsedExpense != null) {
+            val finalDescription = parsedExpense.merchant.take(30)
 
-            // --- THE 60-SECOND GLOBAL DUPLICATE BLOCKER (SHARED WITH SMS) ---
+            // --- 🔥 FIX: COMPOSITE TRANSACTION FINGERPRINT DEBOUNCER (SHARED GLOBAL SPACE) ---
             val sharedPref = applicationContext.getSharedPreferences("ExpenseDebounce", Context.MODE_PRIVATE)
-            val lastAmount = sharedPref.getFloat("last_amount", -1f)
-            val lastTime = sharedPref.getLong("last_time", 0L)
-            val lastType = sharedPref.getString("last_type", "")
             val currentTime = System.currentTimeMillis()
 
-            // If the exact same amount and type is processed within 60 seconds by either SMS or Notification, ignore it!
-            if (lastAmount == parsedExpense.amount.toFloat() && lastType == parsedExpense.type && (currentTime - lastTime) < 60000) {
-                Log.d("UpiListener", "Duplicate Notification ignored to prevent double-logging.")
-                return // Skip entirely
+            // Generate matching key signatures ensuring cross-ingestion sources evaluate identically
+            val cleanMerchantId = finalDescription.lowercase().replace("\\s+".toRegex(), "")
+            val fingerprintKey = "tx_${parsedExpense.amount}_${parsedExpense.type}_$cleanMerchantId"
+
+            val lastTimeForFingerprint = sharedPref.getLong(fingerprintKey, 0L)
+
+            if ((currentTime - lastTimeForFingerprint) < 60000) {
+                Log.d("UpiListener", "Duplicate fingerprint rejected via notification source ($fingerprintKey).")
+                return
             }
 
-            // Save this new transaction to memory to block future duplicates
+            // Immediately block additional arriving streams
             sharedPref.edit()
-                .putFloat("last_amount", parsedExpense.amount.toFloat())
-                .putLong("last_time", currentTime)
-                .putString("last_type", parsedExpense.type)
+                .putLong(fingerprintKey, currentTime)
                 .commit()
-            // ---------------------------------------
+            // ---------------------------------------------------------------------------------
 
             try {
                 val db = ExpenseDatabase.getDatabase(applicationContext)
 
-                // Truncate description to 30 chars just to be safe
-                val finalDescription = parsedExpense.merchant.take(30)
-
                 CoroutineScope(Dispatchers.IO).launch {
-                    // --- ON-DEVICE AI PREDICTION ---
                     var smartCategory = db.expenseDao().predictCategoryForMerchant(finalDescription)
 
-                    // If the AI has no history of this merchant, fallback to keyword detection
                     if (smartCategory == null) {
                         smartCategory = detectCategory(finalDescription)
                     }
 
-                    // --- TRIP & PROJECT CHECK ---
                     val activeTrip = db.expenseDao().getActiveTrip()
                     val currentTripId = activeTrip?.tripId
 
@@ -85,7 +78,6 @@ class UpiNotificationListener : NotificationListenerService() {
                         )
                     )
 
-                    // 🔥 NEW: Trigger the Beautiful UI Notification
                     showSuccessNotification(applicationContext, parsedExpense.amount, finalDescription, smartCategory, parsedExpense.type)
                 }
             } catch (e: Exception) {
@@ -109,7 +101,6 @@ class UpiNotificationListener : NotificationListenerService() {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "expense_logged_channel"
 
-        // Create the NotificationChannel for Android O and above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
@@ -126,7 +117,7 @@ class UpiNotificationListener : NotificationListenerService() {
         val titleText = if (type.lowercase() == "income") "💰 Income Tracked!" else "💸 Expense Tracked!"
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher_round) // Using your app's icon
+            .setSmallIcon(R.mipmap.ic_launcher_round)
             .setContentTitle(titleText)
             .setContentText("$formattedAmount $actionText $merchant")
             .setStyle(
@@ -137,7 +128,6 @@ class UpiNotificationListener : NotificationListenerService() {
             .setAutoCancel(true)
             .build()
 
-        // Use a unique ID so multiple back-to-back expenses show separate notifications
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 }
