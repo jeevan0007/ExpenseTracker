@@ -38,6 +38,8 @@ import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
 import java.util.*
 
 class ChartsActivity : AppCompatActivity() {
@@ -180,7 +182,7 @@ class ChartsActivity : AppCompatActivity() {
         val dateFilteredList = masterExpenseList.filter { it.date in chartStartTime..chartEndTime }
         setupBarChart(dateFilteredList)
 
-        val targetType = if (isExpenseMode) "Expense" else "Income"
+        val targetType = if (isExpenseMode) ExpenseType.EXPENSE else ExpenseType.INCOME
         val fullyFilteredList = dateFilteredList.filter { it.type == targetType }
         setupPieChartAndList(fullyFilteredList)
     }
@@ -298,7 +300,7 @@ class ChartsActivity : AppCompatActivity() {
         var totalExpense = 0.0
 
         for (expense in expenses) {
-            if (expense.type == "Income") totalIncome += expense.amount
+            if (expense.type == ExpenseType.INCOME) totalIncome += expense.amount
             else totalExpense += expense.amount
         }
 

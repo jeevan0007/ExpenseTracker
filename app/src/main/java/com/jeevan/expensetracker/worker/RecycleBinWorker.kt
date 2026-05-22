@@ -3,6 +3,7 @@ package com.jeevan.expensetracker.worker
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import android.util.Log
 import com.jeevan.expensetracker.data.ExpenseDatabase
 
 class RecycleBinWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -20,7 +21,7 @@ class RecycleBinWorker(context: Context, params: WorkerParameters) : CoroutineWo
 
             Result.success()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("RecycleBinWorker", "Auto-purge of old recycle bin items failed", e)
             Result.retry()
         }
     }

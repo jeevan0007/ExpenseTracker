@@ -54,7 +54,6 @@ abstract class ExpenseDatabase : RoomDatabase() {
         }
 
         // Migration 5-6 (Billable Expenses)
-        // 🔥 This is the one handling your current issue
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE expense_table ADD COLUMN isBillable INTEGER NOT NULL DEFAULT 0")
@@ -97,7 +96,6 @@ abstract class ExpenseDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7
                     )
-                    // .fallbackToDestructiveMigration() // UNCOMMENT ONLY IF MIGRATIONS FAIL DURING TESTING
                     .build()
                 INSTANCE = instance
                 instance

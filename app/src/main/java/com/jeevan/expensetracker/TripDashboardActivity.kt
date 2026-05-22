@@ -16,6 +16,7 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
@@ -30,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
+import com.jeevan.expensetracker.utils.CurrencyRates
 import java.util.Locale
 
 class TripDashboardActivity : AppCompatActivity() {
@@ -37,23 +39,20 @@ class TripDashboardActivity : AppCompatActivity() {
     private lateinit var db: ExpenseDatabase
     private lateinit var adapter: TripAdapter
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_trip_dashboard)
 
-        // --- 🔥 FIX: Dynamic System Navigation Bar Avoidance ---
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.appBarLayout)) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(0, systemBars.top, 0, 0)
-
-            // Push the FAB up so it doesn't collide with the bottom nav bar
             val fabAddTrip = findViewById<ExtendedFloatingActionButton>(R.id.fabAddTrip)
             val params = fabAddTrip.layoutParams as ViewGroup.MarginLayoutParams
             val defaultMarginDp = (24 * resources.displayMetrics.density).toInt()
             params.bottomMargin = systemBars.bottom + defaultMarginDp
             fabAddTrip.layoutParams = params
-
             insets
         }
 
@@ -68,6 +67,7 @@ class TripDashboardActivity : AppCompatActivity() {
         rvTrips.adapter = adapter
 
         db.expenseDao().getAllTrips().observe(this) { trips ->
+            // FIX: submitList now uses DiffUtil under the hood
             adapter.submitList(trips)
         }
 
@@ -76,12 +76,9 @@ class TripDashboardActivity : AppCompatActivity() {
         }
     }
 
-    // --- 🔥 FIX: Premium Dialog UI Implementation ---
     private fun showCreateTripDialog() {
         val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_create_trip, null)
         val dialog = AlertDialog.Builder(this).setView(dialogView).create()
-
-        // Apply your custom dialog entrance animation if it exists
         dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
 
         val etTripName = dialogView.findViewById<TextInputEditText>(R.id.etTripName)
@@ -89,42 +86,70 @@ class TripDashboardActivity : AppCompatActivity() {
         val btnSaveTrip = dialogView.findViewById<Button>(R.id.btnSaveTrip)
         val btnCancelTrip = dialogView.findViewById<Button>(R.id.btnCancelTrip)
 
+        // Show supported codes as a hint so the user knows what to type
+        etTargetCurrency?.hint = CurrencyRates.supportedCodes.joinToString(" / ")
+
         btnSaveTrip.setOnClickListener {
             val name = etTripName.text.toString().trim()
-            val currency = etTargetCurrency.text.toString().trim()
+            val rawCurrency = etTargetCurrency?.text?.toString()?.trim()?.uppercase() ?: ""
 
-            if (name.isNotEmpty() && currency.isNotEmpty()) {
+            // FIX: validate the typed code against the known list so an unrecognised
+            // string can't slip through and silently fall back to the INR rate.
+            val currency = when {
+                rawCurrency.isEmpty() -> "INR"
+                CurrencyRates.supportedCodes.contains(rawCurrency) -> rawCurrency
+                else -> {
+                    etTargetCurrency?.error = "Use one of: ${CurrencyRates.supportedCodes.joinToString(", ")}"
+                    return@setOnClickListener
+                }
+            }
+
+            if (name.isNotEmpty()) {
                 lifecycleScope.launch(Dispatchers.IO) {
-                    // Deactivate any currently running trips so only ONE is active
                     db.expenseDao().deactivateAllTrips()
-                    // Start the new one
-                    val newTrip = TripSpace(
-                        tripName = name,
-                        targetCurrency = currency.uppercase(),
-                        startDate = System.currentTimeMillis(),
-                        endDate = null,
-                        isActive = true
+                    db.expenseDao().insertTrip(
+                        TripSpace(
+                            tripName = name,
+                            targetCurrency = currency,
+                            startDate = System.currentTimeMillis(),
+                            endDate = null,
+                            isActive = true
+                        )
                     )
-                    db.expenseDao().insertTrip(newTrip)
                 }
                 dialog.dismiss()
             } else {
-                Toast.makeText(this, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please enter a trip name", Toast.LENGTH_SHORT).show()
             }
         }
 
         btnCancelTrip.setOnClickListener { dialog.dismiss() }
-
         dialog.show()
     }
 
     inner class TripAdapter : RecyclerView.Adapter<TripAdapter.TripViewHolder>() {
+
         private var trips = listOf<TripSpace>()
         private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
 
+        // FIX: DiffUtil replaces notifyDataSetChanged() so only changed rows rebind
         fun submitList(newTrips: List<TripSpace>) {
+            val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize() = trips.size
+                override fun getNewListSize() = newTrips.size
+                override fun areItemsTheSame(oldPos: Int, newPos: Int) =
+                    trips[oldPos].tripId == newTrips[newPos].tripId
+                override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean {
+                    val o = trips[oldPos]; val n = newTrips[newPos]
+                    return o.tripName == n.tripName
+                            && o.isActive == n.isActive
+                            && o.targetCurrency == n.targetCurrency
+                            && o.endDate == n.endDate
+                            && o.tripBudget == n.tripBudget
+                }
+            })
             trips = newTrips
-            notifyDataSetChanged()
+            diffResult.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TripViewHolder {
@@ -136,13 +161,19 @@ class TripDashboardActivity : AppCompatActivity() {
             val trip = trips[position]
             holder.tvTripName.text = trip.tripName
 
-            // Smart Emoji Logic based on Trip Name
-            val nameLower = trip.tripName.lowercase()
             holder.tvTripIcon.text = when {
-                nameLower.contains("visit") || nameLower.contains("travel") || nameLower.contains("trip") || nameLower.contains("flight") -> "✈️"
-                nameLower.contains("audit") || nameLower.contains("project") || nameLower.contains("client") || nameLower.contains("work") -> "💼"
-                nameLower.contains("vacation") || nameLower.contains("holiday") || nameLower.contains("beach") -> "🌴"
-                nameLower.contains("conference") || nameLower.contains("event") || nameLower.contains("meet") -> "🎟️"
+                trip.tripName.lowercase().let {
+                    it.contains("visit") || it.contains("travel") ||
+                            it.contains("trip") || it.contains("flight") } -> "✈️"
+                trip.tripName.lowercase().let {
+                    it.contains("audit") || it.contains("project") ||
+                            it.contains("client") || it.contains("work") } -> "💼"
+                trip.tripName.lowercase().let {
+                    it.contains("vacation") || it.contains("holiday") ||
+                            it.contains("beach") } -> "🌴"
+                trip.tripName.lowercase().let {
+                    it.contains("conference") || it.contains("event") ||
+                            it.contains("meet") } -> "🎟️"
                 else -> "🗺️"
             }
 
@@ -162,8 +193,9 @@ class TripDashboardActivity : AppCompatActivity() {
 
             holder.btnEndTrip.setOnClickListener {
                 lifecycleScope.launch(Dispatchers.IO) {
-                    val completedTrip = trip.copy(isActive = false, endDate = System.currentTimeMillis())
-                    db.expenseDao().updateTrip(completedTrip)
+                    db.expenseDao().updateTrip(
+                        trip.copy(isActive = false, endDate = System.currentTimeMillis())
+                    )
                 }
             }
 
@@ -173,45 +205,33 @@ class TripDashboardActivity : AppCompatActivity() {
 
                     if (expensesToExport.isEmpty()) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(this@TripDashboardActivity, "No expenses logged for this trip yet.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@TripDashboardActivity,
+                                "No expenses logged for this trip yet.",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                         return@launch
                     }
 
-                    // 🔥 FIX 1: Reverse the database INR back into the local currency!
-                    val exportRate = when (trip.targetCurrency.uppercase()) {
-                        "USD" -> 0.011
-                        "EUR" -> 0.0093
-                        "GBP" -> 0.0081
-                        "JPY" -> 1.69
-                        "CNY" -> 0.076
-                        else -> 1.0
-                    }
-
-                    val tripLocale = when (trip.targetCurrency.uppercase()) {
-                        "USD" -> Locale.US
-                        "EUR" -> Locale.GERMANY
-                        "GBP" -> Locale.UK
-                        "JPY" -> Locale.JAPAN
-                        "CNY" -> Locale.CHINA
-                        else -> Locale("en", "IN")
-                    }
-
-                    // 🔥 FIX 2: Pass the Trip Name into the PDF Generator
                     val pdfFile = PdfReportGenerator.generatePdf(
                         context = this@TripDashboardActivity,
                         expenses = expensesToExport,
-                        currencyRate = exportRate,
-                        locale = tripLocale,
+                        currencyRate = CurrencyRates.exchangeRate(trip.targetCurrency),
+                        locale = CurrencyRates.localeFor(trip.targetCurrency),
                         isInvoice = false,
-                        reportTitle = "Trip Space: ${trip.tripName}" // Passes the custom title!
+                        reportTitle = "Trip Space: ${trip.tripName}"
                     )
 
                     withContext(Dispatchers.Main) {
                         if (pdfFile != null) {
                             sharePdf(pdfFile)
                         } else {
-                            Toast.makeText(this@TripDashboardActivity, "Failed to generate report.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@TripDashboardActivity,
+                                "Failed to generate report.",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 }
@@ -231,7 +251,9 @@ class TripDashboardActivity : AppCompatActivity() {
     }
 
     private fun sharePdf(file: java.io.File) {
-        val uri: Uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
+        val uri: Uri = FileProvider.getUriForFile(
+            this, "${applicationContext.packageName}.provider", file
+        )
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
             putExtra(Intent.EXTRA_STREAM, uri)

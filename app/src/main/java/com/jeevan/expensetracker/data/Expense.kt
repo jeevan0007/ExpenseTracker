@@ -1,6 +1,8 @@
 package com.jeevan.expensetracker.data
 
 import androidx.room.Entity
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "expense_table")
@@ -12,7 +14,7 @@ data class Expense(
     val date: Long = System.currentTimeMillis(),
     val type: String,
     val isRecurring: Boolean = false,
-    val recurrenceType: String = "None",
+    val recurrenceType: String = RecurrenceType.NONE,
     val receiptPath: String? = null,
     val isDeleted: Boolean = false,
     val deletionDate: Long? = null,

@@ -11,6 +11,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
+import android.util.Log
 import java.util.*
 
 object PdfReportGenerator {
@@ -105,7 +108,7 @@ object PdfReportGenerator {
             canvas.drawText(expense.category, 180f, yPosition + 5f, textPaint)
             canvas.drawText(desc, 280f, yPosition + 5f, textPaint)
 
-            if (expense.type == "Income") {
+            if (expense.type == ExpenseType.INCOME) {
                 canvas.drawText("+$formattedAmount", 480f, yPosition + 5f, positivePaint)
                 totalIncome += convertedAmount
             } else {
@@ -166,7 +169,7 @@ object PdfReportGenerator {
             pdfDocument.close()
             file
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("PdfReportGenerator", "PDF generation failed", e)
             pdfDocument.close()
             null
         }

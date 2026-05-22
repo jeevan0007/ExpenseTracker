@@ -5,6 +5,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.jeevan.expensetracker.data.ExpenseDatabase
 import com.jeevan.expensetracker.data.ExpenseRepository
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
 import java.util.Calendar
 
 class RecurringExpenseWorker(
@@ -57,15 +59,12 @@ class RecurringExpenseWorker(
         // --- 4. PROCESS EACH EXPENSE ---
         for (expense in recurringExpenses) {
 
-            // Determine if it is Yearly or Monthly.
-            // (Assuming you add a recurrenceType string to your Expense data class)
-            val isYearly = expense.recurrenceType == "Yearly"
+            // Determine period: Yearly or Monthly (default).
+            val isYearly = expense.recurrenceType == RecurrenceType.YEARLY
 
             val startCheck = if (isYearly) startOfYear else startOfMonth
             val endCheck = if (isYearly) endOfYear else endOfMonth
 
-            // Note: You may want to rename 'checkExpenseExistsThisMonth' in your DAO to
-            // 'checkExpenseExistsInPeriod' since it now handles both months and years!
             val exists = repository.checkExpenseExistsThisMonth(
                 desc = expense.description,
                 category = expense.category,
@@ -76,7 +75,7 @@ class RecurringExpenseWorker(
             // If it hasn't been paid in this period, generate a fresh copy for today!
             if (exists == 0) {
                 val newExpense = expense.copy(
-                    id = 0, // 0 ID tells Room Database to generate a NEW unique ID
+                    id = 0, // Room auto-generates a new primary key when id is 0
                     date = now
                 )
                 repository.insert(newExpense)

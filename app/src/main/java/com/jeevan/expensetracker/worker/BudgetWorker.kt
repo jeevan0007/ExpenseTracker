@@ -17,6 +17,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.util.Calendar
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
 import java.util.Locale
 
 class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -46,7 +48,7 @@ class BudgetWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val currentMonthSpent = db.expenseDao()
             .getAllExpensesSync()
             .filter { expense ->
-                expense.type == "Expense"
+                expense.type == ExpenseType.EXPENSE
                         && expense.date >= startOfThisMonth
                         && !(expense.isBillable && expense.isReimbursed) // FIX: exclude reimbursed
             }

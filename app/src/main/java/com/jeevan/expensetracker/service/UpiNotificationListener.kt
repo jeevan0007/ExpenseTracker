@@ -1,17 +1,14 @@
 package com.jeevan.expensetracker.service
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.jeevan.expensetracker.R
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
+import com.jeevan.expensetracker.utils.NotificationHelper
 import com.jeevan.expensetracker.utils.PaymentParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,7 +75,7 @@ class UpiNotificationListener : NotificationListenerService() {
 
                 // If the AI has no history of this merchant, fallback to keyword detection
                 if (smartCategory == null) {
-                    smartCategory = detectCategory(finalDescription)
+                    smartCategory = PaymentParser.detectCategory(finalDescription)
                 }
 
                 // --- TRIP & PROJECT CHECK ---
@@ -97,7 +94,7 @@ class UpiNotificationListener : NotificationListenerService() {
                     )
                 )
 
-                showSuccessNotification(
+                NotificationHelper.showExpenseTrackedNotification(
                     applicationContext,
                     parsedExpense.amount,
                     finalDescription,
@@ -110,55 +107,5 @@ class UpiNotificationListener : NotificationListenerService() {
         }
     }
 
-    private fun detectCategory(desc: String): String {
-        val d = desc.lowercase()
-        return when {
-            d.contains("swiggy") || d.contains("zomato") || d.contains("pizza") -> "Food"
-            d.contains("uber") || d.contains("ola") || d.contains("rapido") -> "Transport"
-            d.contains("bescom") || d.contains("bill") || d.contains("recharge") -> "Bills"
-            d.contains("mart") || d.contains("store") -> "Shopping"
-            else -> "Automated"
-        }
-    }
 
-    private fun showSuccessNotification(
-        context: Context,
-        amount: Double,
-        merchant: String,
-        category: String,
-        type: String
-    ) {
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "expense_logged_channel"
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Expense Logged Alerts",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Notifications for successfully tracked expenses"
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val formattedAmount = "₹%.2f".format(amount)
-        val actionText = if (type.lowercase() == "income") "received from" else "spent on"
-        val titleText = if (type.lowercase() == "income") "💰 Income Tracked!" else "💸 Expense Tracked!"
-
-        val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher_round)
-            .setContentTitle(titleText)
-            .setContentText("$formattedAmount $actionText $merchant")
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText("Successfully logged $formattedAmount $actionText $merchant under the '$category' category. Your dashboard has been updated!")
-            )
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-
-        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
-    }
 }

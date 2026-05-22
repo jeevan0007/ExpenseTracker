@@ -76,6 +76,8 @@ import kotlinx.coroutines.withContext
 // 🔥 ML KIT IMPORTS
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 class MainActivity : AppCompatActivity() {
@@ -183,11 +185,11 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 .addOnFailureListener { e ->
-                    e.printStackTrace()
+                    Log.e("MainActivity", "ML Kit / receipt image processing failed", e)
                     Toast.makeText(this, "Failed to scan receipt.", Toast.LENGTH_SHORT).show()
                 }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("MainActivity", "ML Kit / receipt image processing failed", e)
         }
     }
 
@@ -218,7 +220,7 @@ class MainActivity : AppCompatActivity() {
             outputStream.close()
             file.absolutePath
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("MainActivity", "Failed to save receipt to internal storage", e)
             null
         }
     }
@@ -503,7 +505,7 @@ class MainActivity : AppCompatActivity() {
                 layoutEmptyState.visibility = View.VISIBLE
                 layoutEmptyState.alpha = 0f
                 layoutEmptyState.animate().alpha(1f).setDuration(400).start()
-                adapter.setExpenses(emptyList())
+                adapter.setExpensesWithContext(emptyList(), this)
             } else {
                 params.scrollFlags = com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SNAP
                 appBarContent.layoutParams = params
@@ -514,7 +516,7 @@ class MainActivity : AppCompatActivity() {
                 val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(context, R.anim.layout_anim_cascade)
                 rvExpensesView.layoutAnimation = controller
 
-                adapter.setExpenses(expenses)
+                adapter.setExpensesWithContext(expenses, this)
                 rvExpensesView.scheduleLayoutAnimation()
             }
         }
@@ -1177,7 +1179,7 @@ class MainActivity : AppCompatActivity() {
         try {
             authPrompt?.authenticate(promptInfo)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("MainActivity", "Unexpected error", e)
         }
     }
 
@@ -1289,7 +1291,7 @@ class MainActivity : AppCompatActivity() {
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
 
-        val recurrenceOptions = listOf("None", "Monthly", "Yearly")
+        val recurrenceOptions = listOf(RecurrenceType.NONE, RecurrenceType.MONTHLY, RecurrenceType.YEARLY)
         val recurrenceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions)
         recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerRecurrence.adapter = recurrenceAdapter
@@ -1315,9 +1317,9 @@ class MainActivity : AppCompatActivity() {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
             val category = spinnerCategory.selectedItem.toString()
-            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
+            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) ExpenseType.INCOME else ExpenseType.EXPENSE
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
-            val isRecurringFlag = selectedRecurrence != "None"
+            val isRecurringFlag = selectedRecurrence != RecurrenceType.NONE
 
             val isBillable = switchBillable.isChecked
             val clientName = if (isBillable) etClientName.text.toString().trim() else null
@@ -1377,9 +1379,9 @@ class MainActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     expenseViewModel.insert(newExpense)
-                    triggerBalancePulse(type == "Income")
+                    triggerBalancePulse(type == ExpenseType.INCOME)
                     dialog.dismiss()
-                    if (type == "Expense") shouldCheckBudget = true
+                    if (type == ExpenseType.EXPENSE) shouldCheckBudget = true
                 }
             }
         }
@@ -1452,7 +1454,7 @@ class MainActivity : AppCompatActivity() {
         // --- POPULATE DATA ---
         etAmount.setText(expense.amount.toString())
         etDescription.setText(expense.description)
-        radioGroupType.check(if (expense.type == "Income") R.id.radioIncome else R.id.radioExpense)
+        radioGroupType.check(if (expense.type == ExpenseType.INCOME) R.id.radioIncome else R.id.radioExpense)
 
         // 🔥 Populate Billable & Reimbursed states
         switchBillable.isChecked = expense.isBillable
@@ -1507,7 +1509,7 @@ class MainActivity : AppCompatActivity() {
         }
         categories.indexOf(expense.category).takeIf { it >= 0 }?.let { spinnerCategory.setSelection(it) }
 
-        val recurrenceOptions = listOf("None", "Monthly", "Yearly")
+        val recurrenceOptions = listOf(RecurrenceType.NONE, RecurrenceType.MONTHLY, RecurrenceType.YEARLY)
         spinnerRecurrence.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions).apply {
             setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
@@ -1518,7 +1520,7 @@ class MainActivity : AppCompatActivity() {
         applySquishPhysics(btnSave) {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
-            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
+            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) ExpenseType.INCOME else ExpenseType.EXPENSE
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
 
             val isBillable = switchBillable.isChecked
@@ -1547,7 +1549,7 @@ class MainActivity : AppCompatActivity() {
                             category = spinnerCategory.selectedItem.toString(),
                             description = description,
                             type = type,
-                            isRecurring = selectedRecurrence != "None",
+                            isRecurring = selectedRecurrence != RecurrenceType.NONE,
                             recurrenceType = selectedRecurrence,
                             receiptPath = resolvedReceiptPath,
                             isBillable = isBillable,
@@ -1558,7 +1560,7 @@ class MainActivity : AppCompatActivity() {
                     dialog.dismiss()
                 }
             }
-            if (type == "Expense") shouldCheckBudget = true
+            if (type == ExpenseType.EXPENSE) shouldCheckBudget = true
         }
 
         applySquishPhysics(btnCancel) { dialog.dismiss() }
@@ -1790,7 +1792,7 @@ class MainActivity : AppCompatActivity() {
             }
 
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("MainActivity", "PDF generation failed", e)
             Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

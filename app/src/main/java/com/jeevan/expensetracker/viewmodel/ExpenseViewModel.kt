@@ -10,6 +10,8 @@ import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
 import com.jeevan.expensetracker.data.ExpenseRepository
 import kotlinx.coroutines.Dispatchers
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
 import kotlinx.coroutines.launch
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
@@ -129,9 +131,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         var calculatedExpense = 0.0
 
         for (item in result) {
-            if (item.type == "Income") {
+            if (item.type == ExpenseType.INCOME) {
                 calculatedIncome += item.amount
-            } else if (item.type == "Expense") {
+            } else if (item.type == ExpenseType.EXPENSE) {
                 // 🔥 SMART MATH:
                 // Only add to "Total Spent" if it's a personal expense
                 // OR if it's billable but you haven't been paid back yet.

@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
+import com.jeevan.expensetracker.utils.CurrencyRates
 import java.util.Locale
 
 class ReimbursementActivity : AppCompatActivity() {
@@ -34,9 +36,13 @@ class ReimbursementActivity : AppCompatActivity() {
     private lateinit var btnGenerateInvoice: MaterialButton
     private lateinit var btnMarkPaid: MaterialButton
 
-    // We keep track of which expenses the user has check-marked
     private val selectedExpenses = mutableSetOf<Expense>()
     private var allPendingExpenses = listOf<Expense>()
+
+    // FIX: read the active currency from SharedPreferences so the invoice
+    // uses the correct symbol instead of always showing ₹.
+    private var activeCurrencyLocale = Locale("en", "IN")
+    private var activeCurrencyRate = 1.0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,55 +57,56 @@ class ReimbursementActivity : AppCompatActivity() {
         btnGenerateInvoice = findViewById(R.id.btnGenerateInvoice)
         btnMarkPaid = findViewById(R.id.btnMarkPaid)
 
+        // FIX: load saved currency preference (same prefs key MainActivity uses)
+        val prefs = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
+        val savedCurrencyCode = prefs.getString("currency_code", "INR") ?: "INR"
+        activeCurrencyRate = prefs.getFloat("currency_rate", 1.0f).toDouble()
+        activeCurrencyLocale = CurrencyRates.localeFor(savedCurrencyCode)
+
         rvReimbursements.layoutManager = LinearLayoutManager(this)
-        val adapter = ReimbursementAdapter()
+        val adapter = ReimbursementAdapter(activeCurrencyLocale, activeCurrencyRate)
         rvReimbursements.adapter = adapter
 
         val db = ExpenseDatabase.getDatabase(this)
 
-        // 1. Observe the Total Amount Owed
+        // Observe total amount owed — shown in the header card
         db.expenseDao().getTotalPendingReimbursement().observe(this) { total ->
-            val amount = total ?: 0.0
-            val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+            val amount = (total ?: 0.0) * activeCurrencyRate
+            val format = NumberFormat.getCurrencyInstance(activeCurrencyLocale)
             tvTotalPending.text = format.format(amount)
         }
 
-        // 2. Observe the List of Pending Items
+        // Observe the list of pending items
         db.expenseDao().getPendingReimbursements().observe(this) { expenses ->
             allPendingExpenses = expenses
 
-            // By default, select everything when the screen loads
+            // Pre-select all items when the screen loads
             selectedExpenses.clear()
             selectedExpenses.addAll(expenses)
 
             adapter.submitList(expenses)
 
-            if (expenses.isEmpty()) {
-                rvReimbursements.visibility = View.GONE
-                tvEmptyState.visibility = View.VISIBLE
-                btnGenerateInvoice.isEnabled = false
-                btnMarkPaid.isEnabled = false
-            } else {
-                rvReimbursements.visibility = View.VISIBLE
-                tvEmptyState.visibility = View.GONE
-                btnGenerateInvoice.isEnabled = true
-                btnMarkPaid.isEnabled = true
-            }
+            val hasItems = expenses.isNotEmpty()
+            rvReimbursements.visibility = if (hasItems) View.VISIBLE else View.GONE
+            tvEmptyState.visibility = if (hasItems) View.GONE else View.VISIBLE
+            btnGenerateInvoice.isEnabled = hasItems
+            btnMarkPaid.isEnabled = hasItems
         }
 
-        // 3. Handle PDF Generation
+        // Generate PDF invoice for the selected items
         btnGenerateInvoice.setOnClickListener {
             if (selectedExpenses.isEmpty()) {
                 Toast.makeText(this, "Select at least one item!", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            // Call our updated PDF generator, passing isInvoice = true
+            // FIX: pass active currency rate and locale so invoice matches the
+            // currency the user is currently working in, not always INR
             val pdfFile = PdfReportGenerator.generatePdf(
                 context = this,
                 expenses = selectedExpenses.toList(),
-                currencyRate = 1.0, // Assuming INR default for now
-                locale = Locale("en", "IN"),
+                currencyRate = activeCurrencyRate,
+                locale = activeCurrencyLocale,
                 isInvoice = true
             )
 
@@ -110,10 +117,9 @@ class ReimbursementActivity : AppCompatActivity() {
             }
         }
 
-        // 4. Handle Marking as Paid (Moves them out of this list)
+        // Mark selected items as reimbursed — removes them from this list
         btnMarkPaid.setOnClickListener {
             if (selectedExpenses.isEmpty()) return@setOnClickListener
-
             val idsToMark = selectedExpenses.map { it.id }
             lifecycleScope.launch(Dispatchers.IO) {
                 db.expenseDao().markAsReimbursed(idsToMark)
@@ -122,19 +128,40 @@ class ReimbursementActivity : AppCompatActivity() {
         }
     }
 
-    // --- RECYCLER VIEW ADAPTER ---
-    inner class ReimbursementAdapter : RecyclerView.Adapter<ReimbursementAdapter.ViewHolder>() {
+    // Inner adapter — currency locale and rate passed in from the activity so
+    // the adapter never reads SharedPreferences itself
+    inner class ReimbursementAdapter(
+        private val currencyLocale: Locale,
+        private val currencyRate: Double
+    ) : RecyclerView.Adapter<ReimbursementAdapter.ViewHolder>() {
+
         private var items = listOf<Expense>()
         private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-        private val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+        private val currencyFormat = NumberFormat.getCurrencyInstance(currencyLocale)
 
+        // FIX: DiffUtil replaces notifyDataSetChanged() so only changed rows rebind
         fun submitList(newItems: List<Expense>) {
+            val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize() = items.size
+                override fun getNewListSize() = newItems.size
+                override fun areItemsTheSame(oldPos: Int, newPos: Int) =
+                    items[oldPos].id == newItems[newPos].id
+                override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean {
+                    val o = items[oldPos]; val n = newItems[newPos]
+                    return o.amount == n.amount
+                            && o.description == n.description
+                            && o.clientName == n.clientName
+                            && o.date == n.date
+                            && o.isReimbursed == n.isReimbursed
+                }
+            })
             items = newItems
-            notifyDataSetChanged()
+            diffResult.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_reimbursement, parent, false)
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_reimbursement, parent, false)
             return ViewHolder(view)
         }
 
@@ -142,7 +169,10 @@ class ReimbursementActivity : AppCompatActivity() {
             val expense = items[position]
             holder.tvTitle.text = expense.description
             holder.tvDate.text = dateFormat.format(Date(expense.date))
-            holder.tvAmount.text = currencyFormat.format(expense.amount)
+
+            // FIX: apply currency conversion so the displayed amount matches the
+            // active currency — previously always showed raw INR value
+            holder.tvAmount.text = currencyFormat.format(expense.amount * currencyRate)
 
             if (expense.clientName.isNullOrBlank()) {
                 holder.tvClient.visibility = View.GONE
@@ -151,10 +181,9 @@ class ReimbursementActivity : AppCompatActivity() {
                 holder.tvClient.text = "Client: ${expense.clientName}"
             }
 
-            // Sync checkbox with our selected set
-            holder.checkbox.setOnCheckedChangeListener(null) // Clear listener first
+            // Clear listener before setting checked state to prevent a feedback loop
+            holder.checkbox.setOnCheckedChangeListener(null)
             holder.checkbox.isChecked = selectedExpenses.contains(expense)
-
             holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
                 if (isChecked) selectedExpenses.add(expense) else selectedExpenses.remove(expense)
             }
@@ -172,7 +201,9 @@ class ReimbursementActivity : AppCompatActivity() {
     }
 
     private fun sharePdf(file: java.io.File) {
-        val uri: Uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
+        val uri: Uri = FileProvider.getUriForFile(
+            this, "${applicationContext.packageName}.provider", file
+        )
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
             putExtra(Intent.EXTRA_STREAM, uri)

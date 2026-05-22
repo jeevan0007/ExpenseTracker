@@ -4,7 +4,7 @@ data class ParsedExpense(
     val amount: Double,
     val merchant: String,
     val source: String,
-    val type: String = "Expense"
+    val type: String = ExpenseType.EXPENSE
 )
 
 object PaymentParser {
@@ -39,7 +39,7 @@ object PaymentParser {
         // If it's neither, ignore the SMS
         if (!isExpense && !isIncome) return null
 
-        val type = if (isIncome) "Income" else "Expense"
+        val type = if (isIncome) ExpenseType.INCOME else ExpenseType.EXPENSE
 
         // --- 5. Extract Amount ---
         val amountRegex = Regex("(?i)(?:₹|rs\\.?|inr)\\s*([0-9,]+(?:\\.[0-9]+)?)")
@@ -58,7 +58,7 @@ object PaymentParser {
         }
         return null
     }
-        private fun extractMerchant(message: String, isIncome: Boolean): String {
+    private fun extractMerchant(message: String, isIncome: Boolean): String {
         val singleLineMsg = message.replace("\r", "").replace("\n", " ")
 
         // --- 🚨 NEW: ICICI Standing Instruction / Auto Debit ---
@@ -166,11 +166,35 @@ object PaymentParser {
                         merchant = title.replace(Regex("(?i)(paid|received|sent|₹|rs\\.?|inr|[0-9,]+(?:\\.[0-9]+)?|to|from)"), "").trim()
                     }
 
-                    val type = if (isIncome) "Income" else "Expense"
+                    val type = if (isIncome) ExpenseType.INCOME else ExpenseType.EXPENSE
                     return ParsedExpense(amount, merchant.uppercase(), "UPI App", type)
                 }
             }
         }
         return null
+    }
+
+    // --- UNIFIED CATEGORY DETECTOR ---
+    // Single source of truth used by both SmsReceiver and UpiNotificationListener.
+    // Merges the keyword sets that were previously split across both files so
+    // SMS and UPI auto-categorisation behave identically.
+    fun detectCategory(desc: String): String {
+        val d = desc.lowercase()
+        return when {
+            d.contains("swiggy") || d.contains("zomato") || d.contains("food")
+                    || d.contains("pizza") || d.contains("restaurant") -> "Food"
+
+            d.contains("uber") || d.contains("ola") || d.contains("rapido")
+                    || d.contains("fuel") || d.contains("petrol") -> "Transport"
+
+            d.contains("jio") || d.contains("airtel") || d.contains("bill")
+                    || d.contains("netflix") || d.contains("bescom")
+                    || d.contains("recharge") -> "Bills"
+
+            d.contains("amazon") || d.contains("flipkart") || d.contains("myntra")
+                    || d.contains("mart") || d.contains("store") -> "Shopping"
+
+            else -> "Automated"
+        }
     }
 }

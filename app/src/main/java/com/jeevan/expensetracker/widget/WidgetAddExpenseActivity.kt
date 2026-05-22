@@ -11,6 +11,9 @@ import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
 import com.jeevan.expensetracker.utils.CategoryManager
 import kotlinx.coroutines.Dispatchers
+import com.jeevan.expensetracker.utils.ExpenseType
+import com.jeevan.expensetracker.utils.RecurrenceType
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class WidgetAddExpenseActivity : AppCompatActivity() {
@@ -64,7 +67,7 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerCategory.adapter = spinnerAdapter
 
-        val recurrenceOptions = listOf("None", "Monthly", "Yearly")
+        val recurrenceOptions = listOf(RecurrenceType.NONE, RecurrenceType.MONTHLY, RecurrenceType.YEARLY)
         val recurrenceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, recurrenceOptions)
         recurrenceAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerRecurrence.adapter = recurrenceAdapter
@@ -77,9 +80,9 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
             val category = spinnerCategory.selectedItem.toString()
-            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) "Income" else "Expense"
+            val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) ExpenseType.INCOME else ExpenseType.EXPENSE
             val selectedRecurrence = spinnerRecurrence.selectedItem.toString()
-            val isRecurringFlag = selectedRecurrence != "None"
+            val isRecurringFlag = selectedRecurrence != RecurrenceType.NONE
 
             val amount = amountText.toDoubleOrNull()
             if (amount == null || amount <= 0 || description.isEmpty()) {
@@ -133,7 +136,7 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
             outputStream.close()
             file.absolutePath
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("WidgetAddExpense", "Failed to save receipt from widget", e)
             null
         }
     }

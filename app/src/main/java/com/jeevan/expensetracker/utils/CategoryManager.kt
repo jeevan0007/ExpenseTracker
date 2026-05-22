@@ -2,6 +2,7 @@ package com.jeevan.expensetracker.utils
 
 import android.content.Context
 import org.json.JSONArray
+import android.util.Log
 import org.json.JSONObject
 
 // A simple blueprint for a Category
@@ -29,7 +30,7 @@ object CategoryManager {
                 list.add(CustomCategory(obj.getString("name"), obj.getString("emoji")))
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("CategoryManager", "Failed to deserialize saved categories, falling back to defaults", e)
             return getDefaultCategories() // Fallback if data gets corrupted
         }
         return list
