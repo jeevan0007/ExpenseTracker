@@ -13,8 +13,10 @@ import com.jeevan.expensetracker.utils.CategoryManager
 import kotlinx.coroutines.Dispatchers
 import com.jeevan.expensetracker.utils.ExpenseType
 import com.jeevan.expensetracker.utils.RecurrenceType
+import com.jeevan.expensetracker.utils.ReceiptScanner
 import android.util.Log
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class WidgetAddExpenseActivity : AppCompatActivity() {
 
@@ -94,7 +96,9 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
             // coroutine is cancelled if the activity is destroyed before it finishes.
             lifecycleScope.launch(Dispatchers.IO) {
                 // Save receipt to internal storage on IO thread (not main thread)
-                val finalReceiptPath = tempReceiptUri?.let { saveReceiptToInternalStorage(it) }
+                val finalReceiptPath = tempReceiptUri?.let {
+                    ReceiptScanner.saveToInternalStorage(this@WidgetAddExpenseActivity, it)
+                }
 
                 val db = ExpenseDatabase.getDatabase(this@WidgetAddExpenseActivity)
                 db.expenseDao().insert(
@@ -111,7 +115,7 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
                 )
 
                 // Switch back to main thread to show Toast and close
-                launch(Dispatchers.Main) {
+                withContext(Dispatchers.Main) {
                     Toast.makeText(
                         this@WidgetAddExpenseActivity,
                         "Expense Logged!",
@@ -125,19 +129,5 @@ class WidgetAddExpenseActivity : AppCompatActivity() {
         btnCancel.setOnClickListener { finish() }
     }
 
-    private fun saveReceiptToInternalStorage(uri: android.net.Uri): String? {
-        return try {
-            val inputStream = contentResolver.openInputStream(uri) ?: return null
-            val fileName = "receipt_widget_${System.currentTimeMillis()}.jpg"
-            val file = java.io.File(filesDir, fileName)
-            val outputStream = java.io.FileOutputStream(file)
-            inputStream.copyTo(outputStream)
-            inputStream.close()
-            outputStream.close()
-            file.absolutePath
-        } catch (e: Exception) {
-            Log.e("WidgetAddExpense", "Failed to save receipt from widget", e)
-            null
-        }
-    }
+    // saveReceiptToInternalStorage → replaced by ReceiptScanner.saveToInternalStorage()
 }

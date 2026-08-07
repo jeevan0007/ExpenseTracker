@@ -59,7 +59,13 @@ import com.jeevan.expensetracker.adapter.ExpenseAdapter
 import com.jeevan.expensetracker.data.ExpenseDatabase
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.jeevan.expensetracker.data.Expense
+import com.jeevan.expensetracker.utils.AppSessionState
 import com.jeevan.expensetracker.utils.CategoryManager
+import com.jeevan.expensetracker.utils.CurrencyRates
+import com.jeevan.expensetracker.utils.loadSavedCurrency
+import com.jeevan.expensetracker.utils.saveCurrencyPrefs
+import com.jeevan.expensetracker.utils.ExportManager
+import com.jeevan.expensetracker.utils.ReceiptScanner
 import com.jeevan.expensetracker.utils.ShakeDetector
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
 import com.jeevan.expensetracker.worker.BudgetWorker
@@ -69,16 +75,19 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import com.jeevan.expensetracker.utils.applySquishPhysics
+import com.jeevan.expensetracker.utils.dpToPx
+import com.jeevan.expensetracker.utils.vibrate
+import com.jeevan.expensetracker.utils.vibrateLight
+import com.jeevan.expensetracker.utils.vibrateReset
+import com.jeevan.expensetracker.utils.vibrateGlitch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// 🔥 ML KIT IMPORTS
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
+// ML Kit imports removed — moved to utils/ReceiptScanner.kt
 import com.jeevan.expensetracker.utils.ExpenseType
 import com.jeevan.expensetracker.utils.RecurrenceType
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 class MainActivity : AppCompatActivity() {
 
@@ -148,10 +157,12 @@ class MainActivity : AppCompatActivity() {
                     btnAttach?.text = "Change"
                 }
             }
-            vibratePhoneLight()
+            vibrateLight()
 
             // Trigger the Offline AI Scanner
-            processReceiptImage(it)
+            ReceiptScanner.scanAndFill(this, it, currentReceiptPreview?.let { _ -> activeAmountInput }) {
+                vibrate()
+            }
         }
     }
 
@@ -166,70 +177,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    // 🔥 THE ML KIT RECEIPT SCANNER ENGINE
-    private fun processReceiptImage(uri: android.net.Uri) {
-        Toast.makeText(this, "Scanning receipt...", Toast.LENGTH_SHORT).show()
-        try {
-            val image = InputImage.fromFilePath(this, uri)
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-            recognizer.process(image)
-                .addOnSuccessListener { visionText ->
-                    val extractedAmount = extractTotalAmount(visionText.text)
-                    if (extractedAmount != null && extractedAmount > 0) {
-                        activeAmountInput?.setText(extractedAmount.toString())
-                        vibratePhone()
-                        Toast.makeText(this, "Auto-filled: $extractedAmount", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this, "Could not find a clear total amount.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-                .addOnFailureListener { e ->
-                    Log.e("MainActivity", "ML Kit / receipt image processing failed", e)
-                    Toast.makeText(this, "Failed to scan receipt.", Toast.LENGTH_SHORT).show()
-                }
-        } catch (e: Exception) {
-            Log.e("MainActivity", "ML Kit / receipt image processing failed", e)
-        }
-    }
-
-    private fun extractTotalAmount(text: String): Double? {
-        val regex = Regex("""\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d+\.\d{2}\b""")
-        val matches = regex.findAll(text)
-        var maxAmount = 0.0
-
-        for (match in matches) {
-            val cleanString = match.value.replace(",", "")
-            val value = cleanString.toDoubleOrNull() ?: 0.0
-
-            if (value > maxAmount) {
-                maxAmount = value
-            }
-        }
-        return if (maxAmount > 0) maxAmount else null
-    }
-
-    private fun saveReceiptToInternalStorage(uri: android.net.Uri): String? {
-        return try {
-            val inputStream = contentResolver.openInputStream(uri) ?: return null
-            val fileName = "receipt_${System.currentTimeMillis()}.jpg"
-            val file = java.io.File(filesDir, fileName)
-            val outputStream = java.io.FileOutputStream(file)
-            inputStream.copyTo(outputStream)
-            inputStream.close()
-            outputStream.close()
-            file.absolutePath
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Failed to save receipt to internal storage", e)
-            null
-        }
-    }
-
-    companion object {
-        var isSessionUnlocked = false
-        var backgroundedTime = 0L
-        var isNavigatingInternally = false
-    }
+    // processReceiptImage, extractTotalAmount, saveReceiptToInternalStorage
+    // → moved to utils/ReceiptScanner.kt
+    // Session state → moved to utils/AppSessionState.kt
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -262,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         val ivStealthToggle = findViewById<ImageView>(R.id.ivStealthToggle)
         ivStealthToggle.setImageResource(if (isStealthMode) android.R.drawable.ic_secure else android.R.drawable.ic_menu_view)
 
-        applySquishPhysics(ivStealthToggle) {
+        ivStealthToggle.applySquishPhysics {
             isStealthMode = !isStealthMode
             sharedPref.edit().putBoolean("stealth_mode", isStealthMode).apply()
 
@@ -283,7 +233,7 @@ class MainActivity : AppCompatActivity() {
         val navView = findViewById<NavigationView>(R.id.navView)
 
         val btnOpenDrawer = findViewById<ImageView>(R.id.btnOpenDrawer)
-        applySquishPhysics(btnOpenDrawer) {
+        btnOpenDrawer.applySquishPhysics {
             drawerLayout.openDrawer(GravityCompat.START)
         }
 
@@ -293,24 +243,21 @@ class MainActivity : AppCompatActivity() {
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_trips -> {
-                    isNavigatingInternally = true
+                    AppSessionState.isNavigatingInternally = true
                     val intent = Intent(this@MainActivity, TripDashboardActivity::class.java)
-                    startActivity(intent)
-                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    startActivity(intent, android.app.ActivityOptions.makeCustomAnimation(this, R.anim.slide_in_right, R.anim.slide_out_left).toBundle())
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_recycle_bin -> {
-                    isNavigatingInternally = true
+                    AppSessionState.isNavigatingInternally = true
                     val intent = Intent(this, RecycleBinActivity::class.java)
-                    startActivity(intent)
-                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    startActivity(intent, android.app.ActivityOptions.makeCustomAnimation(this, R.anim.slide_in_right, R.anim.slide_out_left).toBundle())
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
                 R.id.nav_settings -> {
-                    isNavigatingInternally = true
+                    AppSessionState.isNavigatingInternally = true
                     val intent = Intent(this@MainActivity, CategorySettingsActivity::class.java)
-                    startActivity(intent)
-                    overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+                    startActivity(intent, android.app.ActivityOptions.makeCustomAnimation(this, R.anim.slide_in_right, R.anim.slide_out_left).toBundle())
                     drawerLayout.closeDrawer(GravityCompat.START)
                 }
             }
@@ -324,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         val btnUnlockScreen = findViewById<Button>(R.id.btnUnlockScreen)
         val isAppLockEnabled = sharedPref.getBoolean("app_lock_enabled", false)
 
-        if (isAppLockEnabled && !isSessionUnlocked) {
+        if (isAppLockEnabled && !AppSessionState.isSessionUnlocked) {
             lockedOverlay.visibility = View.VISIBLE
             lockedOverlay.alpha = 1f
         } else {
@@ -401,7 +348,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                vibratePhoneLight()
+                vibrateLight()
                 val position = viewHolder.bindingAdapterPosition
                 val expenseToDelete = adapter.getExpenseAt(position)
                 showDeleteDialog(expenseToDelete, position)
@@ -566,26 +513,31 @@ class MainActivity : AppCompatActivity() {
 
         fabTravelMode.setOnClickListener {
             closeFabMenu()
-            vibratePhone()
+            vibrate()
             showCurrencyDialog(fabTravelMode)
         }
 
         val fabExport = findViewById<FloatingActionButton>(R.id.fabExport)
         fabExport.setOnClickListener {
             closeFabMenu()
-            vibratePhone()
-            exportDataToCSV()
+            vibrate()
+            ExportManager.exportToPdf(
+                this,
+                expenseViewModel.filteredExpenses.value ?: emptyList(),
+                activeCurrencyRate,
+                activeCurrencyLocale
+            )
         }
 
         val fabAddExpense = findViewById<FloatingActionButton>(R.id.fabAddExpense)
         fabAddExpense.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    vibratePhoneLight()
+                    vibrateLight()
                     v.animate().scaleX(0.85f).scaleY(0.85f).setDuration(150).setInterpolator(DecelerateInterpolator()).start()
                 }
                 MotionEvent.ACTION_UP -> {
-                    vibratePhone()
+                    vibrate()
                     v.animate().scaleX(1f).scaleY(1f).setDuration(400).setInterpolator(OvershootInterpolator(2.5f)).start()
                     closeFabMenu()
                     showAddExpenseDialog()
@@ -597,14 +549,13 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        applySquishPhysics(findViewById<Button>(R.id.btnSetBudget)) { showSetBudgetDialog() }
-        applySquishPhysics(findViewById<Button>(R.id.btnDateFilter)) { showDateFilterDialog() }
+        findViewById<Button>(R.id.btnSetBudget).applySquishPhysics { showSetBudgetDialog() }
+        findViewById<Button>(R.id.btnDateFilter).applySquishPhysics { showDateFilterDialog() }
 
-        applySquishPhysics(findViewById<Button>(R.id.btnViewCharts)) {
-            isNavigatingInternally = true
+        findViewById<Button>(R.id.btnViewCharts).applySquishPhysics {
+            AppSessionState.isNavigatingInternally = true
             val intent = Intent(this, ChartsActivity::class.java)
-            startActivity(intent)
-            overridePendingTransition(R.anim.slide_in_right, R.anim.slide_out_left)
+            startActivity(intent, android.app.ActivityOptions.makeCustomAnimation(this, R.anim.slide_in_right, R.anim.slide_out_left).toBundle())
         }
 
         val btnToggleTheme = findViewById<Button>(R.id.btnToggleTheme)
@@ -613,7 +564,7 @@ class MainActivity : AppCompatActivity() {
 
         val btnToggleAppLock = findViewById<Button>(R.id.btnToggleAppLock)
         updateAppLockButtonText(btnToggleAppLock)
-        applySquishPhysics(btnToggleAppLock) { toggleAppLock(btnToggleAppLock) }
+        btnToggleAppLock.applySquishPhysics { toggleAppLock(btnToggleAppLock) }
 
         val headerCard = findViewById<MaterialCardView>(R.id.headerCard)
         headerCard.translationY = -50f
@@ -681,7 +632,7 @@ class MainActivity : AppCompatActivity() {
 
         fabMain.setOnClickListener {
             isFabExpanded = !isFabExpanded
-            vibratePhoneLight()
+            vibrateLight()
             if (isFabExpanded) {
                 toggleGlassBlur(true)
                 dimOverlay.visibility = View.VISIBLE
@@ -736,17 +687,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        isNavigatingInternally = false
+        AppSessionState.isNavigatingInternally = false
         val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
         val isAppLockEnabled = sharedPref.getBoolean("app_lock_enabled", false)
         val lockedOverlay = findViewById<LinearLayout>(R.id.lockedOverlay)
 
-        if (backgroundedTime > 0 && (System.currentTimeMillis() - backgroundedTime) > 3000) {
-            isSessionUnlocked = false
+        if (AppSessionState.backgroundedTime > 0 && (System.currentTimeMillis() - AppSessionState.backgroundedTime) > 3000) {
+            AppSessionState.isSessionUnlocked = false
         }
-        backgroundedTime = 0L
+        AppSessionState.backgroundedTime = 0L
 
-        if (isAppLockEnabled && !isSessionUnlocked) {
+        if (isAppLockEnabled && !AppSessionState.isSessionUnlocked) {
             lockedOverlay.visibility = View.VISIBLE
             lockedOverlay.alpha = 1f
             toggleGlassBlur(true)
@@ -759,8 +710,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        if (!isNavigatingInternally) {
-            backgroundedTime = System.currentTimeMillis()
+        if (!AppSessionState.isNavigatingInternally) {
+            AppSessionState.backgroundedTime = System.currentTimeMillis()
         }
     }
 
@@ -828,45 +779,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadSavedCurrency(sharedPref: android.content.SharedPreferences) {
-        activeCurrencyRate = sharedPref.getFloat("currency_rate", 1.0f).toDouble()
-        val lang = sharedPref.getString("currency_lang", "en") ?: "en"
-        val country = sharedPref.getString("currency_country", "IN") ?: "IN"
-        activeCurrencyLocale = Locale(lang, country)
-        isTravelModeActive = activeCurrencyRate != 1.0
+        // Delegates to the CurrencyRates extension so key names are defined once
+        val saved = loadSavedCurrency()
+        activeCurrencyRate   = saved.rate
+        activeCurrencyLocale = saved.locale
+        isTravelModeActive   = activeCurrencyRate != 1.0
     }
 
     private fun saveCurrencyPrefs(rate: Double, locale: Locale) {
-        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
-        sharedPref.edit().apply {
-            putFloat("currency_rate", rate.toFloat())
-            putString("currency_lang", locale.language)
-            putString("currency_country", locale.country)
-            apply()
-        }
+        saveCurrencyPrefs(rate, locale) // CurrencyRates extension
     }
 
     private fun showCurrencyDialog(fab: FloatingActionButton) {
-        val currencies = arrayOf("🇮🇳 INR (Base)", "🇺🇸 USD ($)", "🇪🇺 EUR (€)", "🇬🇧 GBP (£)", "🇯🇵 JPY (¥)", "🇨🇳 CNY (¥)")
+        // Use CurrencyRates as the single source of truth for labels and rates.
+        // Previously hardcoded 6 currencies with duplicate rate values here,
+        // which could drift out of sync with CurrencyRates.kt.
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Select Travel Currency")
-        builder.setItems(currencies) { _, which ->
-            when (which) {
-                0 -> setCurrency(1.0, Locale("en", "IN"), false)
-                1 -> setCurrency(0.011, Locale.US, true)
-                2 -> setCurrency(0.0093, Locale.GERMANY, true)
-                3 -> setCurrency(0.0081, Locale.UK, true)
-                4 -> setCurrency(1.69, Locale.JAPAN, true)
-                5 -> setCurrency(0.076, Locale.CHINA, true)
-            }
-            if (isTravelModeActive) {
-                fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#4CAF50"))
-            } else {
-                fab.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#FF9800"))
-            }
+        builder.setItems(CurrencyRates.displayLabels) { _, which ->
+            val code = CurrencyRates.supportedCodes[which]
+            val rate = CurrencyRates.exchangeRate(code)
+            val locale = CurrencyRates.localeFor(code)
+            setCurrency(rate, locale, code != "INR")
+            fab.backgroundTintList = ColorStateList.valueOf(
+                Color.parseColor(if (isTravelModeActive) "#4CAF50" else "#FF9800")
+            )
         }
-        val dialog = builder.create()
-        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
-        dialog.show()
+        builder.create().also {
+            it.window?.attributes?.windowAnimations = R.style.DialogAnimation
+        }.show()
     }
 
     private fun setCurrency(rate: Double, locale: Locale, isTravel: Boolean) {
@@ -923,7 +864,7 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(tempAnimationView)
 
         tempAnimationView.playAnimation()
-        vibrateGlitchPattern()
+        vibrateGlitch()
 
         val flicker = ValueAnimator.ofFloat(0f, 0.85f, 0.2f, 0.85f, 0.9f)
         flicker.duration = 400
@@ -942,29 +883,13 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun dpToPx(dp: Int): Int {
-        return (dp * resources.displayMetrics.density).toInt()
-    }
-
-    private fun vibrateGlitchPattern() {
-        val vibrator = getVibrator()
-        val timings = longArrayOf(0, 40, 80, 40, 150, 60)
-        val amplitudes = intArrayOf(0, 160, 0, 200, 0, 180)
-
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
-            } else {
-                @Suppress("DEPRECATION") vibrator.vibrate(400)
-            }
-        }
-    }
+    // dpToPx, vibrateGlitchPattern → moved to ViewExtensions.kt / VibrationExtensions.kt
 
     private fun setupThemeButtonPhysics(button: Button) {
         button.setOnClickListener {
             if (!button.isEnabled) return@setOnClickListener
             button.isEnabled = false
-            vibratePhone()
+            vibrate()
 
             val isDark = AppCompatDelegate.getDefaultNightMode() != AppCompatDelegate.MODE_NIGHT_YES
 
@@ -996,7 +921,7 @@ class MainActivity : AppCompatActivity() {
         lottieAnimationView.postDelayed({
             onThemeSwitch()
             if (isDark) {
-                vibratePhone()
+                vibrate()
                 shakeHeaderCard()
                 lottieAnimationView.pauseAnimation()
                 lottieAnimationView.postDelayed({
@@ -1067,7 +992,7 @@ class MainActivity : AppCompatActivity() {
 
         animator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                if (abs(startValue - newValue.toFloat()) > 1) vibratePhoneLight()
+                if (abs(startValue - newValue.toFloat()) > 1) vibrateLight()
             }
         })
 
@@ -1087,68 +1012,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applySquishPhysics(view: View, onClickAction: () -> Unit) {
-        view.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.animate().scaleX(0.92f).scaleY(0.92f).setDuration(100).setInterpolator(DecelerateInterpolator()).start()
-                }
-                MotionEvent.ACTION_UP -> {
-                    vibratePhoneLight()
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(2f)).start()
-                    onClickAction()
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(2f)).start()
-                }
-            }
-            true
-        }
-    }
-
-    private fun getVibrator(): Vibrator {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            vibratorManager.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        }
-    }
-
-    private fun vibratePhoneLight() {
-        val vibrator = getVibrator()
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(20, 50))
-            } else {
-                @Suppress("DEPRECATION") vibrator.vibrate(20)
-            }
-        }
-    }
-
-    private fun vibratePhone() {
-        val vibrator = getVibrator()
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION") vibrator.vibrate(50)
-            }
-        }
-    }
-
-    private fun vibrateReset() {
-        val v = getVibrator()
-        if (v.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val timing = longArrayOf(0, 70, 50, 70)
-                v.vibrate(VibrationEffect.createWaveform(timing, -1))
-            } else {
-                @Suppress("DEPRECATION") v.vibrate(300)
-            }
-        }
-    }
+    // applySquishPhysics, getVibrator, vibratePhone*, vibrateReset
+    // → moved to ViewExtensions.kt / VibrationExtensions.kt
 
     private fun launchBiometricLock(overlay: View) {
         authPrompt?.cancelAuthentication()
@@ -1162,7 +1027,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    isSessionUnlocked = true
+                    AppSessionState.isSessionUnlocked = true
                     toggleGlassBlur(false)
                     overlay.animate().alpha(0f).setDuration(400).withEndAction {
                         overlay.visibility = View.GONE
@@ -1203,7 +1068,7 @@ class MainActivity : AppCompatActivity() {
                     val newState = !isCurrentlyEnabled
                     sharedPref.edit().putBoolean("app_lock_enabled", newState).apply()
                     updateAppLockButtonText(button)
-                    if (!newState) isSessionUnlocked = true
+                    if (!newState) AppSessionState.isSessionUnlocked = true
                     Toast.makeText(applicationContext, "App Lock ${if (newState) "enabled" else "disabled"}!", Toast.LENGTH_SHORT).show()
                 }
             })
@@ -1299,21 +1164,21 @@ class MainActivity : AppCompatActivity() {
         val symbol = java.util.Currency.getInstance(activeCurrencyLocale).symbol
         etAmount.hint = "Amount ($symbol)"
 
-        applySquishPhysics(btnRemoveReceipt) {
+        btnRemoveReceipt.applySquishPhysics {
             currentReceiptPreview?.visibility = android.view.View.GONE
             currentReceiptPreview?.setImageDrawable(null)
             tempReceiptUri = null
             btnAttachReceipt.text = "📷 Attach Receipt"
             btnRemoveReceipt.visibility = android.view.View.GONE
-            vibratePhoneLight()
+            vibrateLight()
         }
 
-        applySquishPhysics(btnAttachReceipt) {
-            isNavigatingInternally = true
+        btnAttachReceipt.applySquishPhysics {
+            AppSessionState.isNavigatingInternally = true
             pickReceiptLauncher.launch("image/*")
         }
 
-        applySquishPhysics(btnSave) {
+        btnSave.applySquishPhysics {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
             val category = spinnerCategory.selectedItem.toString()
@@ -1345,7 +1210,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (hasError) {
-                vibratePhone()
+                vibrate()
                 Toast.makeText(this@MainActivity, "Please fill required fields", Toast.LENGTH_SHORT).show()
                 return@applySquishPhysics
             }
@@ -1357,7 +1222,7 @@ class MainActivity : AppCompatActivity() {
                 // FIX: receipt save moved inside the IO coroutine — file I/O must
                 // not run on the main thread as it can cause ANR on slow storage.
                 val finalReceiptPath = tempReceiptUri?.let { uri ->
-                    saveReceiptToInternalStorage(uri)
+                    ReceiptScanner.saveToInternalStorage(this@MainActivity, uri)
                 }
 
                 val db = ExpenseDatabase.getDatabase(this@MainActivity)
@@ -1385,7 +1250,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        applySquishPhysics(btnCancel) { dialog.dismiss() }
+        btnCancel.applySquishPhysics { dialog.dismiss() }
         dialog.show()
     }
 
@@ -1401,7 +1266,7 @@ class MainActivity : AppCompatActivity() {
 
         tvDeleteMessage.text = "Delete \"${expense.description}\"?"
 
-        applySquishPhysics(btnCancel) {
+        btnCancel.applySquishPhysics {
             dialog.dismiss()
             position?.let { adapter.notifyItemChanged(it) }
         }
@@ -1410,8 +1275,8 @@ class MainActivity : AppCompatActivity() {
             position?.let { adapter.notifyItemChanged(it) }
         }
 
-        applySquishPhysics(btnConfirm) {
-            vibratePhone()
+        btnConfirm.applySquishPhysics {
+            vibrate()
             expenseViewModel.delete(expense)
             dialog.dismiss()
             Toast.makeText(this, "Moved to Recycle Bin 🗑️", Toast.LENGTH_SHORT).show()
@@ -1487,18 +1352,18 @@ class MainActivity : AppCompatActivity() {
 
         // --- BUTTON LOGIC ---
 
-        applySquishPhysics(btnRemoveReceipt) {
+        btnRemoveReceipt.applySquishPhysics {
             currentReceiptPreview?.visibility = View.GONE
             currentReceiptPreview?.setImageDrawable(null)
             tempReceiptUri = null
             finalReceiptPath = null
             btnAttachReceipt.text = "📷 Attach Receipt"
             btnRemoveReceipt.visibility = View.GONE
-            vibratePhoneLight()
+            vibrateLight()
         }
 
-        applySquishPhysics(btnAttachReceipt) {
-            isNavigatingInternally = true
+        btnAttachReceipt.applySquishPhysics {
+            AppSessionState.isNavigatingInternally = true
             pickReceiptLauncher.launch("image/*")
         }
 
@@ -1517,7 +1382,7 @@ class MainActivity : AppCompatActivity() {
         if (recIndex >= 0) spinnerRecurrence.setSelection(recIndex)
 
         btnSave.text = "Update"
-        applySquishPhysics(btnSave) {
+        btnSave.applySquishPhysics {
             val amountText = etAmount.text.toString()
             val description = etDescription.text.toString()
             val type = if (radioGroupType.checkedRadioButtonId == R.id.radioIncome) ExpenseType.INCOME else ExpenseType.EXPENSE
@@ -1529,7 +1394,7 @@ class MainActivity : AppCompatActivity() {
 
             val amount = amountText.toDoubleOrNull()
             if (amount == null || amount <= 0 || description.isEmpty()) {
-                vibratePhone()
+                vibrate()
                 if (amount == null) shakeErrorView(etAmount)
                 if (description.isEmpty()) shakeErrorView(etDescription)
                 return@applySquishPhysics
@@ -1539,7 +1404,7 @@ class MainActivity : AppCompatActivity() {
             // file I/O never blocks the main thread.
             lifecycleScope.launch(Dispatchers.IO) {
                 val resolvedReceiptPath = tempReceiptUri?.let { uri ->
-                    saveReceiptToInternalStorage(uri)
+                    ReceiptScanner.saveToInternalStorage(this@MainActivity, uri)
                 } ?: finalReceiptPath
 
                 withContext(Dispatchers.Main) {
@@ -1563,7 +1428,7 @@ class MainActivity : AppCompatActivity() {
             if (type == ExpenseType.EXPENSE) shouldCheckBudget = true
         }
 
-        applySquishPhysics(btnCancel) { dialog.dismiss() }
+        btnCancel.applySquishPhysics { dialog.dismiss() }
         dialog.show()
     }
 
@@ -1586,13 +1451,13 @@ class MainActivity : AppCompatActivity() {
             etBudget.setText(monthlyBudget.toString())
         }
 
-        applySquishPhysics(btnSaveBudget) {
+        btnSaveBudget.applySquishPhysics {
             val budgetText = etBudget.text.toString()
             val budget = budgetText.toDoubleOrNull()
 
             if (budget == null || budget <= 0) {
                 shakeErrorView(etBudget)
-                vibratePhone()
+                vibrate()
                 return@applySquishPhysics
             }
 
@@ -1603,7 +1468,7 @@ class MainActivity : AppCompatActivity() {
                 .putFloat("monthly_budget", budget.toFloat())
                 .apply()
 
-            vibratePhone()
+            vibrate()
             dialog.dismiss()
 
             // Refresh UI components
@@ -1613,7 +1478,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Budget updated! 🎯", Toast.LENGTH_SHORT).show()
         }
 
-        applySquishPhysics(btnCancelBudget) {
+        btnCancelBudget.applySquishPhysics {
             dialog.dismiss()
         }
 
@@ -1657,8 +1522,8 @@ class MainActivity : AppCompatActivity() {
 
             btnFixBudget.backgroundTintList = ColorStateList.valueOf(color)
 
-            applySquishPhysics(btnIgnore) { dialog.dismiss() }
-            applySquishPhysics(btnFixBudget) {
+            btnIgnore.applySquishPhysics { dialog.dismiss() }
+            btnFixBudget.applySquishPhysics {
                 dialog.dismiss()
                 showSetBudgetDialog()
             }
@@ -1673,7 +1538,7 @@ class MainActivity : AppCompatActivity() {
 
         val radioGroup = dialogView.findViewById<RadioGroup>(R.id.radioGroupDateFilter)
 
-        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnApplyDateFilter)) {
+        dialogView.findViewById<Button>(R.id.btnApplyDateFilter).applySquishPhysics {
             val calendar = Calendar.getInstance()
             val dateFormat = SimpleDateFormat("dd MMM", Locale.getDefault())
 
@@ -1724,7 +1589,7 @@ class MainActivity : AppCompatActivity() {
             }
             dialog.dismiss()
         }
-        applySquishPhysics(dialogView.findViewById<Button>(R.id.btnCancelDateFilter)) { dialog.dismiss() }
+        dialogView.findViewById<Button>(R.id.btnCancelDateFilter).applySquishPhysics { dialog.dismiss() }
         dialog.show()
     }
 
@@ -1742,7 +1607,7 @@ class MainActivity : AppCompatActivity() {
             findViewById<Button>(R.id.btnDateFilter).text = "Custom"
             val sdf = SimpleDateFormat("dd MMM", Locale.getDefault())
             tvDateHeader.text = "Showing: ${sdf.format(Date(localStart))} - ${sdf.format(Date(localEnd))}"
-            vibratePhone()
+            vibrate()
         }
         datePicker.show(supportFragmentManager, "MATERIAL_DATE_RANGE_PICKER")
     }
@@ -1755,47 +1620,7 @@ class MainActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(sharedPref.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM))
     }
 
-    private fun exportDataToCSV() {
-        val expenses = expenseViewModel.filteredExpenses.value
-
-        if (expenses.isNullOrEmpty()) {
-            Toast.makeText(this, "No data to export", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        Toast.makeText(this, "Generating Professional PDF...", Toast.LENGTH_SHORT).show()
-
-        try {
-            val pdfFile = com.jeevan.expensetracker.utils.PdfReportGenerator.generatePdf(
-                this,
-                expenses,
-                activeCurrencyRate,
-                activeCurrencyLocale
-            )
-
-            if (pdfFile != null) {
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    this,
-                    "${applicationContext.packageName}.provider",
-                    pdfFile
-                )
-
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/pdf"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "Professional Expense Report")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(shareIntent, "Save or Share PDF Report"))
-            } else {
-                Toast.makeText(this, "Failed to create PDF", Toast.LENGTH_SHORT).show()
-            }
-
-        } catch (e: Exception) {
-            Log.e("MainActivity", "PDF generation failed", e)
-            Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
+    // exportDataToCSV → moved to utils/ExportManager.kt
 
     private fun triggerBalancePulse(isIncome: Boolean) {
         val tvBalance = findViewById<TextView>(R.id.tvBalanceAmount)
@@ -1811,7 +1636,7 @@ class MainActivity : AppCompatActivity() {
         colorAnimation.addUpdateListener { animator -> tvBalance.setTextColor(animator.animatedValue as Int) }
         colorAnimation.start()
 
-        vibratePhoneLight()
+        vibrateLight()
     }
 
     private fun showFullScreenReceipt(imageUri: android.net.Uri?, imagePath: String?) {

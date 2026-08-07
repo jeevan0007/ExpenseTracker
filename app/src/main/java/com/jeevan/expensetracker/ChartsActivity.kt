@@ -40,7 +40,9 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import com.jeevan.expensetracker.utils.ExpenseType
 import com.jeevan.expensetracker.utils.RecurrenceType
+import com.jeevan.expensetracker.utils.loadSavedCurrency
 import java.util.*
+import com.jeevan.expensetracker.utils.dpToPx
 
 class ChartsActivity : AppCompatActivity() {
 
@@ -100,12 +102,9 @@ class ChartsActivity : AppCompatActivity() {
             insets
         }
 
-        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
-        activeRate = sharedPref.getFloat("currency_rate", 1.0f).toDouble()
-        val lang = sharedPref.getString("currency_lang", "en") ?: "en"
-        val country = sharedPref.getString("currency_country", "IN") ?: "IN"
-        val activeLocale = Locale(lang, country)
-        activeFormat = NumberFormat.getCurrencyInstance(activeLocale)
+        val saved = loadSavedCurrency()
+        activeRate   = saved.rate
+        activeFormat = NumberFormat.getCurrencyInstance(saved.locale)
 
         pieChart = findViewById(R.id.pieChart)
         barChart = findViewById(R.id.barChart)
@@ -117,6 +116,7 @@ class ChartsActivity : AppCompatActivity() {
 
         findViewById<ImageButton>(R.id.btnBack).setOnClickListener {
             finish()
+            @Suppress("DEPRECATION") // overrideActivityTransition requires API 34; minSdk is 24
             overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
         }
 
@@ -456,12 +456,12 @@ class ChartsActivity : AppCompatActivity() {
         return currentNightMode == Configuration.UI_MODE_NIGHT_YES
     }
 
-    private fun dpToPx(dp: Int): Int {
-        return (dp * resources.displayMetrics.density).toInt()
-    }
+    // dpToPx → moved to ViewExtensions.kt
 
+    @Suppress("DEPRECATION")
     override fun onBackPressed() {
         super.onBackPressed()
+        @Suppress("DEPRECATION") // overrideActivityTransition requires API 34; minSdk is 24
         overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
     }
 }

@@ -41,6 +41,21 @@ interface ExpenseDao {
     """)
     fun getNetBalance(): LiveData<Double>
 
+    // --- BUDGET WORKER QUERY ---
+    // Returns total personal spending since :startOfMonth in a single SQL pass.
+    // Excludes soft-deleted rows and expenses that are both billable AND reimbursed
+    // (recovered money doesn't count against the budget).
+    // BudgetWorker uses this instead of getAllExpensesSync() + in-memory filter,
+    // which previously loaded the entire table regardless of how many rows it contained.
+    @Query("""
+        SELECT COALESCE(SUM(amount), 0.0) FROM expense_table
+        WHERE type = 'Expense'
+        AND isDeleted = 0
+        AND date >= :startOfMonth
+        AND (isBillable = 0 OR isReimbursed = 0)
+    """)
+    suspend fun getTotalSpentThisMonth(startOfMonth: Long): Double
+
     @Query("SELECT * FROM expense_table WHERE isRecurring = 1 AND isDeleted = 0")
     fun getRecurringExpenses(): List<Expense>
 

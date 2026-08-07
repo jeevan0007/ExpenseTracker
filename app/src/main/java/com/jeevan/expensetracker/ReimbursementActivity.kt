@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
-import com.jeevan.expensetracker.utils.CurrencyRates
+import com.jeevan.expensetracker.utils.loadSavedCurrency
 import java.util.Locale
 
 class ReimbursementActivity : AppCompatActivity() {
@@ -57,11 +57,9 @@ class ReimbursementActivity : AppCompatActivity() {
         btnGenerateInvoice = findViewById(R.id.btnGenerateInvoice)
         btnMarkPaid = findViewById(R.id.btnMarkPaid)
 
-        // FIX: load saved currency preference (same prefs key MainActivity uses)
-        val prefs = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
-        val savedCurrencyCode = prefs.getString("currency_code", "INR") ?: "INR"
-        activeCurrencyRate = prefs.getFloat("currency_rate", 1.0f).toDouble()
-        activeCurrencyLocale = CurrencyRates.localeFor(savedCurrencyCode)
+        val saved = loadSavedCurrency()
+        activeCurrencyRate   = saved.rate
+        activeCurrencyLocale = saved.locale
 
         rvReimbursements.layoutManager = LinearLayoutManager(this)
         val adapter = ReimbursementAdapter(activeCurrencyLocale, activeCurrencyRate)

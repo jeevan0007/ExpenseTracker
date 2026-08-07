@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
-import com.jeevan.expensetracker.R
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.data.ExpenseDatabase
 import com.jeevan.expensetracker.utils.NotificationHelper
@@ -16,83 +15,78 @@ import kotlinx.coroutines.launch
 
 class SmsReceiver : BroadcastReceiver() {
 
+    companion object {
+        private const val TAG = "SmsReceiver"
+        private const val PREFS_DEBOUNCE = "ExpenseDebounce"
+        private const val DEBOUNCE_WINDOW_MS = 60_000L
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
 
-        // Group multipart SMS into a single string to prevent double-parsing long messages
-        val smsBodyBuilder = StringBuilder()
-        var sender = "Unknown"
-        for (sms in messages) {
-            smsBodyBuilder.append(sms.messageBody ?: "")
-            sender = sms.originatingAddress ?: "Unknown"
-        }
-        val body = smsBodyBuilder.toString()
+        // Group multipart SMS into a single string to prevent double-parsing
+        val body = buildString { messages.forEach { append(it.messageBody ?: "") } }
+        val sender = messages.firstOrNull()?.originatingAddress ?: "Unknown"
 
-        // 1. Send the raw message to the Central Brain (PaymentParser)
         val parsedExpense = PaymentParser.parseSms(body, sender) ?: return
 
-        // --- THE 60-SECOND GLOBAL DUPLICATE BLOCKER ---
-        val sharedPref = context.getSharedPreferences("ExpenseDebounce", Context.MODE_PRIVATE)
-        val lastAmount = sharedPref.getFloat("last_amount", -1f)
-        val lastTime = sharedPref.getLong("last_time", 0L)
-        val lastType = sharedPref.getString("last_type", "")
-        val currentTime = System.currentTimeMillis()
+        // ── DUPLICATE BLOCKER ────────────────────────────────────────────────
+        // FIX: store amount as Long (paise) instead of Float to avoid precision
+        // loss on amounts like ₹14,499.50 — Float only has ~7 significant digits,
+        // which can cause two different amounts to compare as equal.
+        val prefs = context.getSharedPreferences(PREFS_DEBOUNCE, Context.MODE_PRIVATE)
+        val lastAmountPaise = prefs.getLong("last_amount_paise", -1L)
+        val lastTime        = prefs.getLong("last_time", 0L)
+        val lastType        = prefs.getString("last_type", "")
+        val currentTime     = System.currentTimeMillis()
+        val currentPaise    = (parsedExpense.amount * 100).toLong()
 
-        if (lastAmount == parsedExpense.amount.toFloat()
+        if (lastAmountPaise == currentPaise
             && lastType == parsedExpense.type
-            && (currentTime - lastTime) < 60000
+            && (currentTime - lastTime) < DEBOUNCE_WINDOW_MS
         ) {
-            Log.d("SmsReceiver", "Duplicate Bank SMS ignored to prevent double-logging.")
+            Log.d(TAG, "Duplicate SMS ignored (same amount+type within ${DEBOUNCE_WINDOW_MS / 1000}s)")
             return
         }
 
-        // FIX: use apply() instead of commit() — non-blocking, safe to call here
-        sharedPref.edit()
-            .putFloat("last_amount", parsedExpense.amount.toFloat())
+        prefs.edit()
+            .putLong("last_amount_paise", currentPaise)
             .putLong("last_time", currentTime)
             .putString("last_type", parsedExpense.type)
             .apply()
 
-        // Fallback description if the parser returns "Unknown"
-        val finalDescription = if (parsedExpense.merchant == "Unknown") {
-            "Automated ($sender)"
-        } else {
-            parsedExpense.merchant
-        }
+        val finalDescription = parsedExpense.merchant
+            .takeIf { it != "Unknown" }
+            ?: "Automated ($sender)"
 
-        // FIX: use goAsync() to keep the process alive while the coroutine runs,
-        // preventing a silent DB insert loss if the system kills the receiver early.
+        // goAsync() keeps the process alive while the coroutine runs — without it,
+        // the system may kill the receiver before the DB insert completes.
         val pendingResult = goAsync()
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val db = ExpenseDatabase.getDatabase(context)
+                val dao = ExpenseDatabase.getDatabase(context).expenseDao()
 
-                // --- ON-DEVICE AI PREDICTION ---
-                var smartCategory = db.expenseDao().predictCategoryForMerchant(finalDescription)
+                val smartCategory = dao.predictCategoryForMerchant(finalDescription)
+                    ?: PaymentParser.detectCategory(finalDescription)
 
-                // If the AI has no history of this merchant, fallback to keyword detection
-                if (smartCategory == null) {
-                    smartCategory = PaymentParser.detectCategory(finalDescription)
-                }
+                val currentTripId = dao.getActiveTrip()?.tripId
 
-                // --- TRIP & PROJECT CHECK ---
-                val activeTrip = db.expenseDao().getActiveTrip()
-                val currentTripId = activeTrip?.tripId
-
-                db.expenseDao().insert(
+                dao.insert(
                     Expense(
-                        amount = parsedExpense.amount,
-                        category = smartCategory,
+                        amount      = parsedExpense.amount,
+                        category    = smartCategory,
                         description = finalDescription,
-                        type = parsedExpense.type,
+                        type        = parsedExpense.type,
                         isRecurring = false,
-                        date = System.currentTimeMillis(),
-                        tripId = currentTripId
+                        date        = currentTime,
+                        tripId      = currentTripId
                     )
                 )
+
+                Log.i(TAG, "LOGGED ₹${parsedExpense.amount} | $finalDescription | $smartCategory")
 
                 NotificationHelper.showExpenseTrackedNotification(
                     context,
@@ -102,13 +96,10 @@ class SmsReceiver : BroadcastReceiver() {
                     parsedExpense.type
                 )
             } catch (e: Exception) {
-                Log.e("SmsReceiver", "Database error: ${e.message}")
+                Log.e(TAG, "Database insert failed: ${e.message}", e)
             } finally {
-                // FIX: always finish() the pendingResult so the system knows we're done
                 pendingResult.finish()
             }
         }
     }
-
-
 }

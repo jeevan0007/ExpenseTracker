@@ -36,9 +36,14 @@ import androidx.recyclerview.widget.RecyclerView
 import com.jeevan.expensetracker.adapter.ExpenseAdapter
 import com.jeevan.expensetracker.data.Expense
 import com.jeevan.expensetracker.viewmodel.ExpenseViewModel
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.min
+import com.jeevan.expensetracker.utils.applySquishPhysics
+import com.jeevan.expensetracker.utils.dpToPx
+import com.jeevan.expensetracker.utils.loadSavedCurrency
+import com.jeevan.expensetracker.utils.vibrate
+import com.jeevan.expensetracker.utils.vibrateLight
+import com.jeevan.expensetracker.utils.vibrateHeavy
 
 class RecycleBinActivity : AppCompatActivity() {
 
@@ -72,21 +77,25 @@ class RecycleBinActivity : AppCompatActivity() {
 
         expenseViewModel = ViewModelProvider(this)[ExpenseViewModel::class.java]
 
-        val sharedPref = getSharedPreferences("ExpenseTracker", MODE_PRIVATE)
-        val rate = sharedPref.getFloat("currency_rate", 1.0f).toDouble()
-        val locale = Locale(sharedPref.getString("currency_lang", "en") ?: "en", sharedPref.getString("currency_country", "IN") ?: "IN")
+        val saved = loadSavedCurrency()
 
         adapter = ExpenseAdapter(
             onItemClick = { expense -> showRestoreDialog(expense) },
             onItemLongClick = { expense -> showHardDeleteDialog(expense) }
         )
-        adapter.updateCurrency(rate, locale)
+        adapter.updateCurrency(saved.rate, saved.locale)
 
         rvDeletedExpenses.adapter = adapter
         rvDeletedExpenses.layoutManager = LinearLayoutManager(this)
 
         // --- PREMIUM DUAL-SWIPE ENGINE ---
         setupSwipeActions(rvDeletedExpenses)
+
+        // Track whether the list has been shown at least once this session.
+        // The cascade entrance animation should only fire on first load —
+        // firing it on every observe emission (e.g. after a restore) causes
+        // all remaining items to re-run their entrance animation simultaneously.
+        var hasAnimatedInitialLoad = false
 
         expenseViewModel.getDeletedExpenses().observe(this) { expenses ->
             if (expenses.isNullOrEmpty()) {
@@ -97,29 +106,35 @@ class RecycleBinActivity : AppCompatActivity() {
 
                 btnEmptyBin.isEnabled = false
                 btnEmptyBin.alpha = 0.5f
+                hasAnimatedInitialLoad = false // reset so it re-animates if items return
             } else {
                 rvDeletedExpenses.visibility = View.VISIBLE
                 layoutEmptyBin.visibility = View.GONE
                 btnEmptyBin.isEnabled = true
                 btnEmptyBin.alpha = 1.0f
 
-                // --- CASCADING ANIMATION TRIGGER ---
-                val context = rvDeletedExpenses.context
-                val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(context, R.anim.layout_anim_cascade)
-                rvDeletedExpenses.layoutAnimation = controller
-
                 adapter.setExpenses(expenses)
-                rvDeletedExpenses.scheduleLayoutAnimation()
+
+                // Only run the cascade on the first emission — incremental
+                // updates (restore/delete) use DiffUtil inside the adapter instead.
+                if (!hasAnimatedInitialLoad) {
+                    val controller = android.view.animation.AnimationUtils
+                        .loadLayoutAnimation(rvDeletedExpenses.context, R.anim.layout_anim_cascade)
+                    rvDeletedExpenses.layoutAnimation = controller
+                    rvDeletedExpenses.scheduleLayoutAnimation()
+                    hasAnimatedInitialLoad = true
+                }
             }
         }
 
         // Apply Premium Physics
-        applySquishPhysics(btnBack) {
+        btnBack.applySquishPhysics {
             finish()
+            @Suppress("DEPRECATION") // overrideActivityTransition requires API 34; minSdk is 24
             overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
         }
 
-        applySquishPhysics(btnEmptyBin) {
+        btnEmptyBin.applySquishPhysics {
             showEmptyBinDialog()
         }
     }
@@ -137,11 +152,11 @@ class RecycleBinActivity : AppCompatActivity() {
 
                 if (direction == ItemTouchHelper.RIGHT) {
                     // Swiped Right -> Restore
-                    vibratePhone()
+                    vibrate()
                     showRestoreDialog(expense, position)
                 } else if (direction == ItemTouchHelper.LEFT) {
                     // Swiped Left -> Hard Delete
-                    vibratePhoneHeavy()
+                    vibrateHeavy()
                     showHardDeleteDialog(expense, position)
                 }
             }
@@ -228,15 +243,15 @@ class RecycleBinActivity : AppCompatActivity() {
         btnConfirm.text = "Restore"
         btnConfirm.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50"))
 
-        applySquishPhysics(btnCancel) {
+        btnCancel.applySquishPhysics {
             dialog.dismiss()
             position?.let { adapter.notifyItemChanged(it) }
         }
 
         dialog.setOnCancelListener { position?.let { adapter.notifyItemChanged(it) } }
 
-        applySquishPhysics(btnConfirm) {
-            vibratePhone()
+        btnConfirm.applySquishPhysics {
+            vibrate()
             expenseViewModel.restore(expense)
             dialog.dismiss()
             Toast.makeText(this, "Restored successfully ✨", Toast.LENGTH_SHORT).show()
@@ -261,15 +276,15 @@ class RecycleBinActivity : AppCompatActivity() {
         tvDeleteMessage.text = "Permanently delete \"${expense.description}\"?"
         btnConfirm.text = "Delete Forever"
 
-        applySquishPhysics(btnCancel) {
+        btnCancel.applySquishPhysics {
             dialog.dismiss()
             position?.let { adapter.notifyItemChanged(it) }
         }
 
         dialog.setOnCancelListener { position?.let { adapter.notifyItemChanged(it) } }
 
-        applySquishPhysics(btnConfirm) {
-            vibratePhoneHeavy()
+        btnConfirm.applySquishPhysics {
+            vibrateHeavy()
             expenseViewModel.hardDelete(expense)
             dialog.dismiss()
             Toast.makeText(this, "Permanently deleted 🌪️", Toast.LENGTH_SHORT).show()
@@ -294,9 +309,9 @@ class RecycleBinActivity : AppCompatActivity() {
         tvDeleteMessage.text = "Destroy all items in the Recycle Bin forever?"
         btnConfirm.text = "Empty Bin"
 
-        applySquishPhysics(btnCancel) { dialog.dismiss() }
-        applySquishPhysics(btnConfirm) {
-            vibratePhoneHeavy()
+        btnCancel.applySquishPhysics { dialog.dismiss() }
+        btnConfirm.applySquishPhysics {
+            vibrateHeavy()
             expenseViewModel.emptyRecycleBin()
             dialog.dismiss()
             Toast.makeText(this, "Bin Emptied 🗑️", Toast.LENGTH_SHORT).show()
@@ -304,74 +319,13 @@ class RecycleBinActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun applySquishPhysics(view: View, onClickAction: () -> Unit) {
-        view.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.animate().scaleX(0.92f).scaleY(0.92f).setDuration(100).setInterpolator(DecelerateInterpolator()).start()
-                }
-                MotionEvent.ACTION_UP -> {
-                    vibratePhoneLight()
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(2f)).start()
-                    onClickAction()
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(OvershootInterpolator(2f)).start()
-                }
-            }
-            true
-        }
-    }
+    // applySquishPhysics, getVibrator, vibratePhone*, dpToPx
+    // → moved to ViewExtensions.kt / VibrationExtensions.kt
 
-    private fun getVibrator(): Vibrator {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            vibratorManager.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        }
-    }
-
-    private fun vibratePhoneLight() {
-        val vibrator = getVibrator()
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(20, 50))
-            } else {
-                @Suppress("DEPRECATION") vibrator.vibrate(20)
-            }
-        }
-    }
-
-    private fun vibratePhone() {
-        val vibrator = getVibrator()
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION") vibrator.vibrate(50)
-            }
-        }
-    }
-
-    private fun vibratePhoneHeavy() {
-        val vibrator = getVibrator()
-        if (vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(100, 255))
-            } else {
-                @Suppress("DEPRECATION") vibrator.vibrate(100)
-            }
-        }
-    }
-
-    private fun dpToPx(dp: Int): Int {
-        return (dp * resources.displayMetrics.density).toInt()
-    }
-
+    @Suppress("DEPRECATION")
     override fun onBackPressed() {
         super.onBackPressed()
+        @Suppress("DEPRECATION") // overrideActivityTransition requires API 34; minSdk is 24
         overridePendingTransition(R.anim.slide_in_left, R.anim.slide_out_right)
     }
 }
