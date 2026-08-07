@@ -11,7 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         app:title="Pending Reimbursements"
-        app:navigationIcon="@android:drawable/ic_menu_revert"
+        app:navigationIcon="@drawable/ic_back"
         app:layout_constraintTop_toTopOf="parent" />
 
     <com.google.android.material.card.MaterialCardView
@@ -94,7 +94,7 @@
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
             android:text="Mark Paid"
-            app:icon="@android:drawable/ic_menu_save" />
+            app:icon="@drawable/ic_save" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnGenerateInvoice"
@@ -103,7 +103,7 @@
             android:layout_weight="1"
             android:layout_marginStart="8dp"
             android:text="Invoice PDF"
-            app:icon="@android:drawable/ic_menu_share" />
+            app:icon="@drawable/ic_share" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

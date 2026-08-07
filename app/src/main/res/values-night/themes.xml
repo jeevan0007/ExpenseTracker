@@ -1,27 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
     <style name="Theme.ExpenseTracker" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/purple_200</item>
-        <item name="colorPrimaryVariant">@color/purple_500</item>
-        <item name="colorOnPrimary">@color/white</item>
-
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_200</item>
-        <item name="colorOnSecondary">@color/black</item>
-
-        <item name="android:statusBarColor">#1F1B24</item>
+        <item name="colorPrimary">@color/primary_500</item>
+        <item name="colorPrimaryVariant">@color/primary_400</item>
+        <item name="colorOnPrimary">@color/primary_900</item>
+        <item name="colorSecondary">@color/income_500</item>
+        <item name="colorSecondaryVariant">@color/income_600</item>
+        <item name="colorOnSecondary">#0D0D1A</item>
+        <item name="colorSurface">@color/surface_card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="android:colorBackground">@color/surface_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
-
-        <item name="android:colorBackground">#121212</item>
-        <item name="colorSurface">#1E1E1E</item>
-
-        <item name="colorOnSurface">@color/white</item>
-
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:fontFamily">@font/inter</item>
+        <item name="materialButtonStyle">@style/AppButton</item>
+        <item name="materialCardViewStyle">@style/AppCard</item>
     </style>
 
     <style name="Theme.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#121212</item>
+        <item name="windowSplashScreenBackground">@color/surface_bg</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
         <item name="postSplashScreenTheme">@style/Theme.ExpenseTracker</item>
     </style>

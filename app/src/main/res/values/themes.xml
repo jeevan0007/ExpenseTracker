@@ -1,40 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
+
     <style name="Theme.ExpenseTracker" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorOnPrimary">@color/white</item>
-
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_700</item>
-        <item name="colorOnSecondary">@color/black</item>
-
-        <item name="android:statusBarColor">@color/purple_500</item>
-        <item name="android:windowLightStatusBar">false</item>
-
+        <item name="colorPrimary">@color/primary_600</item>
+        <item name="colorPrimaryVariant">@color/primary_700</item>
+        <item name="colorOnPrimary">@color/text_on_primary</item>
+        <item name="colorSecondary">@color/income_500</item>
+        <item name="colorSecondaryVariant">@color/income_700</item>
+        <item name="colorOnSecondary">@color/text_on_primary</item>
+        <item name="colorSurface">@color/surface_card</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="android:colorBackground">@color/surface_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:fontFamily">@font/inter</item>
+        <item name="materialButtonStyle">@style/AppButton</item>
+        <item name="materialCardViewStyle">@style/AppCard</item>
     </style>
 
+    <!-- ── Button styles ──────────────────────────────────── -->
+    <style name="AppButton" parent="Widget.Material3.Button">
+        <item name="cornerRadius">12dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="AppButton.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="cornerRadius">12dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="AppButton.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="cornerRadius">12dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- ── Card style ─────────────────────────────────────── -->
+    <style name="AppCard" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardElevation">0dp</item>
+        <item name="cardCornerRadius">16dp</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="strokeColor">@color/border_subtle</item>
+        <item name="cardBackgroundColor">@color/surface_card</item>
+    </style>
+
+    <!-- ── Dialog animations ──────────────────────────────── -->
     <style name="DialogAnimation">
         <item name="android:windowEnterAnimation">@anim/scale_bounce</item>
         <item name="android:windowExitAnimation">@android:anim/fade_out</item>
     </style>
 
+    <!-- ── Widget theme ───────────────────────────────────── -->
     <style name="WidgetDialogTheme" parent="Theme.Material3.DayNight.Dialog">
         <item name="android:windowBackground">@drawable/rounded_dialog_bg</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 
+    <!-- ── Date picker ────────────────────────────────────── -->
     <style name="PremiumDatePickerTheme" parent="ThemeOverlay.Material3.MaterialCalendar">
-        <item name="colorPrimary">#673AB7</item>
+        <item name="colorPrimary">@color/primary_600</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorPrimaryContainer">#33673AB7</item>
-        <item name="colorOnSurface">#673AB7</item>
+        <item name="colorPrimaryContainer">@color/primary_100</item>
+        <item name="colorOnSurface">@color/primary_600</item>
     </style>
 
+    <!-- ── Splash screen ──────────────────────────────────── -->
     <style name="Theme.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <item name="windowSplashScreenBackground">@color/surface_bg</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
         <item name="postSplashScreenTheme">@style/Theme.ExpenseTracker</item>
     </style>
+
 </resources>

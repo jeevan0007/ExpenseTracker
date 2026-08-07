@@ -22,7 +22,7 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_revert"
+            android:src="@drawable/ic_back"
             app:tint="?attr/colorControlNormal"
             android:contentDescription="Back" />
 
@@ -79,7 +79,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
             android:text="This Month"
-            app:icon="@android:drawable/ic_menu_month" />
+            app:icon="@drawable/ic_calendar" />
     </LinearLayout>
 
     <ScrollView

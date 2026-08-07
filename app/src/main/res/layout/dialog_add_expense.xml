@@ -4,223 +4,378 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingTop="24dp"
-    android:paddingBottom="16dp"
-    android:paddingHorizontal="24dp">
+    android:paddingTop="20dp"
+    android:paddingBottom="24dp"
+    android:paddingHorizontal="20dp">
 
-    <TextView
+    <!-- Title row -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Add Transaction"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:textColor="?android:attr/textColorPrimary"
-        android:layout_marginBottom="16dp" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="20dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Add Transaction"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary"/>
+    </LinearLayout>
+
+    <!-- Expense / Income segmented pill -->
+    <RadioGroup
+        android:id="@+id/radioGroupType"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:checkedButton="@+id/radioExpense"
+        android:background="@drawable/bg_segmented_control"
+        android:layout_marginBottom="20dp">
+
+        <RadioButton
+            android:id="@+id/radioExpense"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Expense"
+            android:gravity="center"
+            android:button="@null"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="@android:color/transparent"/>
+
+        <RadioButton
+            android:id="@+id/radioIncome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Income"
+            android:gravity="center"
+            android:button="@null"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="@android:color/transparent"/>
+    </RadioGroup>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:fadeScrollbars="false"
         android:clipToPadding="false"
-        android:paddingBottom="8dp"
-        android:scrollbars="vertical">
+        android:paddingBottom="4dp"
+        android:scrollbars="none">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- RadioGroup & Amount & Description remain the same... -->
-            <RadioGroup
-                android:id="@+id/radioGroupType"
+            <!-- Amount field — large prominent -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Amount"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="4dp"/>
+
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:checkedButton="@+id/radioExpense"
-                android:layout_marginBottom="12dp">
-
-                <RadioButton
-                    android:id="@+id/radioExpense"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Expense"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:buttonTint="#D32F2F" />
-
-                <RadioButton
-                    android:id="@+id/radioIncome"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Income"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:buttonTint="#388E3C" />
-            </RadioGroup>
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Amount"
                 android:layout_marginBottom="12dp"
-                app:boxCornerRadiusBottomEnd="16dp"
-                app:boxCornerRadiusBottomStart="16dp"
-                app:boxCornerRadiusTopEnd="16dp"
-                app:boxCornerRadiusTopStart="16dp">
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/border_default"
+                app:cardBackgroundColor="@color/surface_card">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etAmount"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="60dp"
+                    android:background="@android:color/transparent"
+                    android:hint="₹0.00"
+                    android:paddingHorizontal="16dp"
                     android:inputType="numberDecimal"
-                    android:textSize="18sp"
+                    android:textSize="26sp"
                     android:textStyle="bold"
-                    android:textColor="?android:attr/textColorPrimary" />
-            </com.google.android.material.textfield.TextInputLayout>
+                    android:textColor="?android:attr/textColorPrimary"/>
+            </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            <!-- Description -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Description (Optional)"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="4dp"/>
+
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Description"
                 android:layout_marginBottom="12dp"
-                app:boxCornerRadiusBottomEnd="16dp"
-                app:boxCornerRadiusBottomStart="16dp"
-                app:boxCornerRadiusTopEnd="16dp"
-                app:boxCornerRadiusTopStart="16dp">
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/border_subtle"
+                app:cardBackgroundColor="@color/surface_card">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etDescription"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
+                    android:layout_height="52dp"
+                    android:background="@android:color/transparent"
+                    android:hint="e.g. Lunch with client"
+                    android:paddingHorizontal="16dp"
                     android:inputType="textCapWords"
-                    android:textColor="?android:attr/textColorPrimary" />
-            </com.google.android.material.textfield.TextInputLayout>
+                    android:textSize="15sp"
+                    android:textColor="?android:attr/textColorPrimary"/>
+            </com.google.android.material.card.MaterialCardView>
 
-            <!-- Spinner Category/Recurrence remain same... -->
-            <Spinner
-                android:id="@+id/spinnerCategory"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:background="@drawable/spinner_background"
-                android:layout_marginBottom="12dp" />
-
-            <Spinner
-                android:id="@+id/spinnerRecurrence"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:background="@drawable/spinner_background"
-                android:layout_marginBottom="16dp" />
-
-            <!-- Billable Section -->
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/switchBillable"
+            <!-- Category row -->
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Billable to Client / Employer"
-                android:textSize="16sp"
-                android:textColor="?android:attr/textColorPrimary"
-                android:layout_marginBottom="12dp" />
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/border_subtle"
+                app:cardBackgroundColor="@color/surface_card">
 
-            <!-- 🔥 Grouped Billable Options -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Category"
+                            android:textSize="11sp"
+                            android:textColor="@color/text_secondary"/>
+
+                        <Spinner
+                            android:id="@+id/spinnerCategory"
+                            android:layout_width="match_parent"
+                            android:layout_height="28dp"
+                            android:background="@android:color/transparent"
+                            android:spinnerMode="dropdown"/>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textSize="20sp"
+                        android:textColor="@color/text_tertiary"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Recurrence row -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/border_subtle"
+                app:cardBackgroundColor="@color/surface_card">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Repeat"
+                            android:textSize="11sp"
+                            android:textColor="@color/text_secondary"/>
+
+                        <Spinner
+                            android:id="@+id/spinnerRecurrence"
+                            android:layout_width="match_parent"
+                            android:layout_height="28dp"
+                            android:background="@android:color/transparent"
+                            android:spinnerMode="dropdown"/>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="›"
+                        android:textSize="20sp"
+                        android:textColor="@color/text_tertiary"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Billable toggle row -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/border_subtle"
+                app:cardBackgroundColor="@color/surface_card">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Billable to client"
+                        android:textSize="15sp"
+                        android:textColor="?android:attr/textColorPrimary"/>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switchBillable"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Client name (hidden until billable ON) -->
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/layoutClientName"
                 style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Client / Project Name"
-                android:layout_marginBottom="12dp"
+                android:hint="Client / Project name"
+                android:layout_marginBottom="8dp"
                 android:visibility="gone"
-                app:boxCornerRadiusBottomEnd="16dp"
-                app:boxCornerRadiusBottomStart="16dp"
-                app:boxCornerRadiusTopEnd="16dp"
-                app:boxCornerRadiusTopStart="16dp">
+                app:boxCornerRadiusTopStart="12dp"
+                app:boxCornerRadiusTopEnd="12dp"
+                app:boxCornerRadiusBottomStart="12dp"
+                app:boxCornerRadiusBottomEnd="12dp">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etClientName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="textCapWords"
-                    android:textColor="?android:attr/textColorPrimary" />
+                    android:textColor="?android:attr/textColorPrimary"/>
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- 🔥 New Reimbursed Switch (Hidden until Billable is ON) -->
+            <!-- Reimbursed toggle -->
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/switchReimbursed"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Mark as Reimbursed (Paid)"
-                android:textSize="16sp"
+                android:text="Already reimbursed"
+                android:textSize="14sp"
                 android:textColor="?android:attr/textColorPrimary"
-                android:layout_marginBottom="16dp"
-                android:visibility="gone" />
+                android:layout_marginBottom="12dp"
+                android:visibility="gone"/>
 
-            <!-- Receipt Actions & Preview -->
-            <LinearLayout
-                android:id="@+id/layoutReceiptActions"
+            <!-- Attach receipt -->
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/border_subtle"
+                app:cardBackgroundColor="@color/surface_card">
 
-                <Button
-                    android:id="@+id/btnAttachReceipt"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="📷 Attach Receipt"
-                    android:layout_marginEnd="4dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp">
 
-                <Button
-                    android:id="@+id/btnRemoveReceipt"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="🗑️ Remove"
-                    android:visibility="gone"
-                    android:textColor="#D32F2F"
-                    android:layout_marginStart="4dp" />
-            </LinearLayout>
+                    <Button
+                        android:id="@+id/btnAttachReceipt"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="📎  Attach Receipt"
+                        android:textSize="14sp"
+                        android:textColor="@color/text_secondary"
+                        android:gravity="start"
+                        android:paddingHorizontal="0dp"/>
+
+                    <Button
+                        android:id="@+id/btnRemoveReceipt"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Remove"
+                        android:visibility="gone"
+                        android:textColor="@color/expense_600"
+                        android:textSize="13sp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <ImageView
                 android:id="@+id/ivReceiptPreview"
                 android:layout_width="match_parent"
-                android:layout_height="160dp"
+                android:layout_height="130dp"
                 android:scaleType="centerCrop"
                 android:visibility="gone"
-                android:background="#1A000000"
-                android:layout_marginBottom="8dp" />
+                android:background="@drawable/bg_segmented_control"
+                android:layout_marginBottom="8dp"/>
 
         </LinearLayout>
     </ScrollView>
 
-    <!-- Bottom Buttons remain same... -->
-    <LinearLayout
+    <!-- Save button — gradient purple pill -->
+    <Button
+        android:id="@+id/btnSave"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="16dp">
+        android:layout_height="52dp"
+        android:layout_marginTop="16dp"
+        android:text="Save Transaction"
+        android:textSize="15sp"
+        android:textColor="#FFFFFF"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:backgroundTint="@color/primary_600"/>
 
-        <Button
-            android:id="@+id/btnCancel"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_weight="1"
-            android:text="Cancel"
-            android:layout_marginEnd="8dp" />
-
-        <Button
-            android:id="@+id/btnSave"
-            android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_weight="1"
-            android:text="Save"
-            android:layout_marginStart="8dp" />
-    </LinearLayout>
+    <Button
+        android:id="@+id/btnCancel"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="Cancel"
+        android:textColor="@color/primary_600"
+        android:textSize="14sp"/>
 
 </LinearLayout>

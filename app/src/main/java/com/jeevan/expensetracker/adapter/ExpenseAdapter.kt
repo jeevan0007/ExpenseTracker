@@ -120,14 +120,14 @@ class ExpenseAdapter(
             if (expense.isReimbursed) {
                 tvLabel?.text = "✅ Reimbursed"
                 holder.badgeBillable.setCardBackgroundColor(
-                    ColorStateList.valueOf(Color.parseColor("#2E7D32"))
+                    ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(holder.itemView.context, com.jeevan.expensetracker.R.color.income_700))
                 )
                 holder.tvClientName.visibility = if (!expense.clientName.isNullOrEmpty()) View.VISIBLE else View.GONE
                 holder.tvClientName.text = "Settled: ${expense.clientName}"
             } else {
                 tvLabel?.text = "💼 Billable"
                 holder.badgeBillable.setCardBackgroundColor(
-                    ColorStateList.valueOf(Color.parseColor("#1976D2"))
+                    ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(holder.itemView.context, com.jeevan.expensetracker.R.color.primary_600))
                 )
                 holder.tvClientName.visibility = if (!expense.clientName.isNullOrEmpty()) View.VISIBLE else View.GONE
                 holder.tvClientName.text = "Client: ${expense.clientName}"
@@ -143,10 +143,10 @@ class ExpenseAdapter(
 
         if (expense.type == ExpenseType.INCOME) {
             holder.tvAmount.text      = if (isStealthMode) "+ ***.**" else "+ $formatted"
-            holder.tvAmount.setTextColor(Color.parseColor("#388E3C"))
+            holder.tvAmount.setTextColor(androidx.core.content.ContextCompat.getColor(holder.itemView.context, com.jeevan.expensetracker.R.color.income_600))
         } else {
             holder.tvAmount.text      = if (isStealthMode) "- ***.**" else "- $formatted"
-            holder.tvAmount.setTextColor(Color.parseColor("#D32F2F"))
+            holder.tvAmount.setTextColor(androidx.core.content.ContextCompat.getColor(holder.itemView.context, com.jeevan.expensetracker.R.color.expense_600))
         }
 
         // Date — reuse pre-built dateFormat

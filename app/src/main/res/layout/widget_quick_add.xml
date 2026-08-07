@@ -11,7 +11,7 @@
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:background="@drawable/widget_circle_bg"
-        android:src="@android:drawable/ic_input_add"
+        android:src="@drawable/ic_add"
         android:tint="#FFFFFF"
         android:contentDescription="Quick Add"
         android:padding="16dp"

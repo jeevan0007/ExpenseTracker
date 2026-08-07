@@ -189,10 +189,18 @@ class MainActivity : AppCompatActivity() {
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.drawerLayout)) { _, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val btnOpenDrawer = findViewById<ImageView>(R.id.btnOpenDrawer)
-            val drawerParams = btnOpenDrawer.layoutParams as ViewGroup.MarginLayoutParams
-            drawerParams.topMargin = systemBars.top + dpToPx(16)
-            btnOpenDrawer.layoutParams = drawerParams
+
+            // FIX: Apply top inset to the topBar itself so ALL content
+            // (avatar, date label, stealth icon) clears the status bar.
+            // Previously only the drawer icon had a topMargin set, leaving
+            // everything else colliding with the status bar.
+            val topBar = findViewById<LinearLayout>(R.id.topBar)
+            topBar.setPadding(
+                topBar.paddingLeft,
+                systemBars.top,
+                topBar.paddingRight,
+                topBar.paddingBottom
+            )
 
             val fabMain = findViewById<FloatingActionButton>(R.id.fabMain)
             val fabParams = fabMain.layoutParams as ViewGroup.MarginLayoutParams
@@ -310,7 +318,7 @@ class MainActivity : AppCompatActivity() {
         expenseViewModel.setDateRangeFilter(startOfMonth, endOfMonth)
 
         findViewById<Button>(R.id.btnDateFilter).text = "This Month"
-        tvDateHeader.text = "Showing: This Month"
+        tvDateHeader.text = "This Month"
 
         val recyclerView = findViewById<RecyclerView>(R.id.rvExpenses)
         adapter = ExpenseAdapter(
@@ -441,6 +449,14 @@ class MainActivity : AppCompatActivity() {
         val appBarLayout = findViewById<com.google.android.material.appbar.AppBarLayout>(R.id.appBarLayout)
         val appBarContent = findViewById<View>(R.id.appBarContent)
 
+        // FIX Issue 3: Gate cascade animation to the FIRST non-empty load only.
+        // Previously scheduleLayoutAnimation() fired on every LiveData emission —
+        // including after every insert. The cascade re-ran all item animations
+        // simultaneously, making newly added items appear invisible until the
+        // animation finished. DiffUtil in the adapter handles incremental updates
+        // surgically; the cascade only needs to run once on initial population.
+        var hasAnimatedInitialLoad = false
+
         expenseViewModel.filteredExpenses.observe(this) { expenses ->
             val params = appBarContent.layoutParams as com.google.android.material.appbar.AppBarLayout.LayoutParams
 
@@ -453,18 +469,22 @@ class MainActivity : AppCompatActivity() {
                 layoutEmptyState.alpha = 0f
                 layoutEmptyState.animate().alpha(1f).setDuration(400).start()
                 adapter.setExpensesWithContext(emptyList(), this)
+                hasAnimatedInitialLoad = false // reset so next load re-animates
             } else {
                 params.scrollFlags = com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SCROLL or com.google.android.material.appbar.AppBarLayout.LayoutParams.SCROLL_FLAG_SNAP
                 appBarContent.layoutParams = params
                 rvExpensesView.visibility = View.VISIBLE
                 layoutEmptyState.visibility = View.GONE
 
-                val context = rvExpensesView.context
-                val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(context, R.anim.layout_anim_cascade)
-                rvExpensesView.layoutAnimation = controller
-
                 adapter.setExpensesWithContext(expenses, this)
-                rvExpensesView.scheduleLayoutAnimation()
+
+                if (!hasAnimatedInitialLoad) {
+                    val controller = android.view.animation.AnimationUtils.loadLayoutAnimation(
+                        rvExpensesView.context, R.anim.layout_anim_cascade)
+                    rvExpensesView.layoutAnimation = controller
+                    rvExpensesView.scheduleLayoutAnimation()
+                    hasAnimatedInitialLoad = true
+                }
             }
         }
 
@@ -490,8 +510,7 @@ class MainActivity : AppCompatActivity() {
                 oldExpenseAnimState = currentExpense
             }
             updateBalance(findViewById(R.id.tvBalanceAmount))
-
-            // 🔥 Trigger the new Burn Rate math here!
+            updateBudgetProgressBar()
             updatePredictiveInsight()
 
             if (shouldCheckBudget && currentExpense > expenseBeforeAdd) {
@@ -775,7 +794,7 @@ class MainActivity : AppCompatActivity() {
         expenseViewModel.setDateRangeFilter(startOfMonth, endOfMonth)
 
         findViewById<Button>(R.id.btnDateFilter).text = "This Month"
-        tvDateHeader.text = "Showing: This Month"
+        tvDateHeader.text = "This Month"
     }
 
     private fun loadSavedCurrency(sharedPref: android.content.SharedPreferences) {
@@ -786,9 +805,10 @@ class MainActivity : AppCompatActivity() {
         isTravelModeActive   = activeCurrencyRate != 1.0
     }
 
-    private fun saveCurrencyPrefs(rate: Double, locale: Locale) {
-        saveCurrencyPrefs(rate, locale) // CurrencyRates extension
-    }
+    // saveCurrencyPrefs private wrapper REMOVED — it caused infinite recursion.
+    // Kotlin resolves member functions before extension functions, so the private
+    // fun called itself instead of the CurrencyRates extension.
+    // setCurrency now calls the extension directly via this.saveCurrencyPrefs().
 
     private fun showCurrencyDialog(fab: FloatingActionButton) {
         // Use CurrencyRates as the single source of truth for labels and rates.
@@ -814,7 +834,10 @@ class MainActivity : AppCompatActivity() {
         activeCurrencyRate = rate
         activeCurrencyLocale = locale
         isTravelModeActive = isTravel
-        saveCurrencyPrefs(rate, locale)
+        // Call the CurrencyRates extension directly.
+        // Using (this as android.content.Context).saveCurrencyPrefs() ensures
+        // Kotlin resolves the extension, not any local function with the same name.
+        (this as android.content.Context).saveCurrencyPrefs(rate, locale)
         adapter.updateCurrency(rate, locale)
         updateHeaderCurrency()
         if (isTravel) {
@@ -1084,7 +1107,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateAppLockButtonText(button: Button) {
         val isEnabled = getSharedPreferences("ExpenseTracker", MODE_PRIVATE).getBoolean("app_lock_enabled", false)
-        button.text = if (isEnabled) "🔒 Lock: ON" else "🔓 Lock: OFF"
+        button.text = if (isEnabled) "🔒" else "🔓"
     }
 
     private fun checkAndRequestPermissions() {
@@ -1472,6 +1495,7 @@ class MainActivity : AppCompatActivity() {
             dialog.dismiss()
 
             // Refresh UI components
+            updateBudgetProgressBar()
             updatePredictiveInsight()
             checkBudgetStatus()
 
@@ -1546,14 +1570,14 @@ class MainActivity : AppCompatActivity() {
                 R.id.radioAllTime -> {
                     expenseViewModel.clearDateFilter()
                     findViewById<Button>(R.id.btnDateFilter).text = "All Time"
-                    tvDateHeader.text = "Showing: All Time"
+                    tvDateHeader.text = "All Time"
                 }
                 R.id.radioToday -> {
                     val start = calendar.apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
                     val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
                     expenseViewModel.setDateRangeFilter(start, end)
                     findViewById<Button>(R.id.btnDateFilter).text = "Today"
-                    tvDateHeader.text = "Showing: Today (${dateFormat.format(Date())})"
+                    tvDateHeader.text = "Today"
                 }
                 R.id.radioThisWeek -> {
                     calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
@@ -1561,7 +1585,7 @@ class MainActivity : AppCompatActivity() {
                     val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
                     expenseViewModel.setDateRangeFilter(start, end)
                     findViewById<Button>(R.id.btnDateFilter).text = "This Week"
-                    tvDateHeader.text = "Showing: This Week (Mon - Today)"
+                    tvDateHeader.text = "This Week"
                 }
                 R.id.radioThisMonth -> {
                     calendar.set(Calendar.DAY_OF_MONTH, 1)
@@ -1569,7 +1593,7 @@ class MainActivity : AppCompatActivity() {
                     val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
                     expenseViewModel.setDateRangeFilter(start, end)
                     findViewById<Button>(R.id.btnDateFilter).text = "This Month"
-                    tvDateHeader.text = "Showing: This Month"
+                    tvDateHeader.text = "This Month"
                 }
                 R.id.radioLastMonth -> {
                     calendar.set(Calendar.DAY_OF_MONTH, 1)
@@ -1579,7 +1603,7 @@ class MainActivity : AppCompatActivity() {
                     val end = calendar.apply { set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
                     expenseViewModel.setDateRangeFilter(start, end)
                     findViewById<Button>(R.id.btnDateFilter).text = "Last Month"
-                    tvDateHeader.text = "Showing: Last Month"
+                    tvDateHeader.text = "Last Month"
                 }
                 R.id.radioCustom -> {
                     dialog.dismiss()
@@ -1606,14 +1630,14 @@ class MainActivity : AppCompatActivity() {
             expenseViewModel.setDateRangeFilter(localStart, localEnd)
             findViewById<Button>(R.id.btnDateFilter).text = "Custom"
             val sdf = SimpleDateFormat("dd MMM", Locale.getDefault())
-            tvDateHeader.text = "Showing: ${sdf.format(Date(localStart))} - ${sdf.format(Date(localEnd))}"
+            tvDateHeader.text = "${sdf.format(Date(localStart))} – ${sdf.format(Date(localEnd))}"
             vibrate()
         }
         datePicker.show(supportFragmentManager, "MATERIAL_DATE_RANGE_PICKER")
     }
 
     private fun updateThemeButtonText(button: Button) {
-        button.text = if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES) "☀️ Light Mode" else "🌙 Dark Mode"
+        button.text = if (AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES) "☀️" else "🌙"
     }
 
     private fun loadSavedTheme(sharedPref: android.content.SharedPreferences) {
@@ -1675,6 +1699,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     // 🔥 ADVANCED PREDICTIVE ENGINE (BURN RATE)
+    private fun updateBudgetProgressBar() {
+        val progressBar = findViewById<com.google.android.material.progressindicator.LinearProgressIndicator?>(R.id.budgetProgressBar) ?: return
+        if (monthlyBudget <= 0) {
+            progressBar.visibility = android.view.View.GONE
+            return
+        }
+        progressBar.visibility = android.view.View.VISIBLE
+        val pct = ((currentExpense / monthlyBudget) * 100).toInt().coerceAtMost(100)
+        progressBar.setProgressCompat(pct, true)
+        // Change color at 80% warning threshold
+        val color = when {
+            pct >= 100 -> android.graphics.Color.parseColor("#F43F5E")
+            pct >= 80  -> android.graphics.Color.parseColor("#F59E0B")
+            else       -> android.graphics.Color.WHITE
+        }
+        progressBar.setIndicatorColor(color)
+    }
+
     private fun updatePredictiveInsight() {
         if (monthlyBudget <= 0) {
             tvPredictiveInsight.visibility = View.GONE

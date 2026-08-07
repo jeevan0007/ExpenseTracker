@@ -19,7 +19,7 @@
             android:layout_height="wrap_content"
             app:title="✈️ Trip &amp; Project Spaces"
             app:titleTextColor="?android:attr/textColorPrimary"
-            app:navigationIcon="@android:drawable/ic_menu_revert"
+            app:navigationIcon="@drawable/ic_back"
             app:navigationIconTint="?android:attr/textColorPrimary"/>
 
     </com.google.android.material.appbar.AppBarLayout>
@@ -44,7 +44,7 @@
         android:text="Start Trip"
         android:textColor="@android:color/white"
         android:elevation="10dp"
-        app:icon="@android:drawable/ic_input_add"
+        app:icon="@drawable/ic_add"
         app:iconTint="@android:color/white"
         app:backgroundTint="?attr/colorPrimary" />
 
