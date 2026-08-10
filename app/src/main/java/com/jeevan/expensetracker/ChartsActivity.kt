@@ -211,6 +211,11 @@ class ChartsActivity : AppCompatActivity() {
 
         val dynamicEmojis = com.jeevan.expensetracker.utils.CategoryManager.getCategories(this).associate { it.name to it.emoji }
 
+        // Update transaction count
+        try {
+            findViewById<android.widget.TextView>(R.id.tvTransactionCount)?.text = expenses.size.toString()
+        } catch (_: Exception) {}
+
         if (totalFilteredAmount > 0) {
             sortedCategories.forEachIndexed { index, entry ->
                 val percentage = (entry.value / totalFilteredAmount * 100).toFloat()
@@ -233,28 +238,28 @@ class ChartsActivity : AppCompatActivity() {
 
         val dataSet = PieDataSet(entries, "")
         dataSet.colors = if (totalFilteredAmount > 0) palette else listOf(Color.GRAY)
-        dataSet.sliceSpace = 3f
-        dataSet.selectionShift = 12f
+        dataSet.sliceSpace = 4f
+        dataSet.selectionShift = 10f
         dataSet.setDrawValues(false)
 
         val data = PieData(dataSet)
         pieChart.data = data
         pieChart.description.isEnabled = false
         pieChart.legend.isEnabled = false
-        pieChart.setExtraOffsets(20f, 0f, 20f, 0f)
+        pieChart.setExtraOffsets(16f, 0f, 16f, 0f)
         pieChart.setDrawEntryLabels(false)
 
         pieChart.isDrawHoleEnabled = true
         pieChart.setHoleColor(Color.TRANSPARENT)
-        pieChart.holeRadius = 65f
-        pieChart.transparentCircleRadius = 70f
+        pieChart.holeRadius = 68f
+        pieChart.transparentCircleRadius = 72f
         pieChart.setDrawCenterText(true)
         pieChart.centerTextRadiusPercent = 100f
         customTypeface?.let { pieChart.setCenterTextTypeface(it) }
 
         updateCenterTextTotal()
 
-        pieChart.animateY(1200, Easing.EaseOutBounce)
+        pieChart.animateY(1000, Easing.EaseOutQuart)
 
         pieChart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
             override fun onValueSelected(e: Entry?, h: Highlight?) {
@@ -265,7 +270,7 @@ class ChartsActivity : AppCompatActivity() {
                 val convertedAmount = pieEntry?.value?.toDouble() ?: 0.0
 
                 pieChart.centerText = "$label\n${activeFormat.format(convertedAmount)}"
-                pieChart.setCenterTextSize(18f)
+                pieChart.setCenterTextSize(16f)
                 pieChart.setCenterTextColor(if (isDarkMode()) Color.WHITE else Color.BLACK)
 
                 val index = h.x.toInt()
@@ -292,7 +297,11 @@ class ChartsActivity : AppCompatActivity() {
         rvDetails.adapter = ChartDetailAdapter(chartItems)
 
         val typeLabel = if (isExpenseMode) "Total Spending" else "Total Income"
-        tvTotalAmount.text = "$typeLabel: ${activeFormat.format(totalFilteredAmount * activeRate)}"
+        tvTotalAmount.text = activeFormat.format(totalFilteredAmount * activeRate)
+        try {
+            val pieTitle = if (isExpenseMode) "Spending by Category" else "Income by Category"
+            findViewById<android.widget.TextView>(R.id.tvPieChartTitle)?.text = pieTitle
+        } catch (_: Exception) {}
     }
 
     private fun setupBarChart(expenses: List<Expense>) {
@@ -312,35 +321,41 @@ class ChartsActivity : AppCompatActivity() {
         barEntries.add(BarEntry(1f, convertedExpense))
 
         val dataSet = BarDataSet(barEntries, "")
-        dataSet.colors = listOf(Color.parseColor("#4CAF50"), Color.parseColor("#FF5252"))
-        dataSet.valueTextSize = 12f
-        dataSet.valueTextColor = if (isDarkMode()) Color.WHITE else Color.BLACK
+        dataSet.colors = listOf(
+            Color.parseColor("#10B981"),  // income_500 — emerald
+            Color.parseColor("#F43F5E")   // expense_500 — rose
+        )
+        dataSet.valueTextSize = 11f
+        dataSet.valueTextColor = if (isDarkMode()) Color.WHITE else Color.parseColor("#0F0F23")
         customTypeface?.let { dataSet.valueTypeface = it }
 
         val data = BarData(dataSet)
-        data.barWidth = 0.5f
+        data.barWidth = 0.45f
         barChart.data = data
 
         barChart.description.isEnabled = false
         barChart.axisRight.isEnabled = false
         barChart.legend.isEnabled = false
-        barChart.animateY(1200, Easing.EaseOutQuad)
-        barChart.setExtraOffsets(0f, 0f, 0f, 15f)
+        barChart.setDrawGridBackground(false)
+        barChart.animateY(900, Easing.EaseOutQuart)
+        barChart.setExtraOffsets(0f, 8f, 0f, 8f)
 
         val xAxis = barChart.xAxis
         xAxis.valueFormatter = IndexAxisValueFormatter(listOf("Income", "Expense"))
         xAxis.position = XAxis.XAxisPosition.BOTTOM
         xAxis.setDrawGridLines(false)
         xAxis.granularity = 1f
-        xAxis.textSize = 14f
-        xAxis.textColor = if (isDarkMode()) Color.WHITE else Color.BLACK
+        xAxis.textSize = 13f
+        xAxis.textColor = if (isDarkMode()) Color.parseColor("#9CA3AF") else Color.parseColor("#6B7280")
         customTypeface?.let { xAxis.typeface = it }
 
-        barChart.axisLeft.axisMinimum = 0f
-        barChart.axisLeft.spaceTop = 20f
-        barChart.axisLeft.textColor = if (isDarkMode()) Color.WHITE else Color.BLACK
-        barChart.axisLeft.setDrawGridLines(true)
-        customTypeface?.let { barChart.axisLeft.typeface = it }
+        val leftAxis = barChart.axisLeft
+        leftAxis.axisMinimum = 0f
+        leftAxis.spaceTop = 25f
+        leftAxis.textColor = if (isDarkMode()) Color.parseColor("#6B7280") else Color.parseColor("#9CA3AF")
+        leftAxis.gridColor = if (isDarkMode()) Color.parseColor("#1F2937") else Color.parseColor("#F3F4F6")
+        leftAxis.setDrawAxisLine(false)
+        customTypeface?.let { leftAxis.typeface = it }
         barChart.setTouchEnabled(false)
 
         barChart.invalidate()
