@@ -47,25 +47,31 @@ object PaymentParser {
         val emojiRegex = Regex("[\uD83C\uDF00-\uD83D\uDDFF\uD83E\uDD00-\uD83E\uDDFF\u2600-\u26FF\u2700-\u27BF]")
         if (emojiRegex.containsMatchIn(message)) return null
 
-        // LAYER 4 — TRANSACTION KEYWORD VALIDATION
-        // BUG FIX: Use word-boundary-aware matching to avoid "credited" matching
-        // inside "credit limit", "accredited" etc.
-        val isExpense = lowerMsg.contains("debited") ||
-                lowerMsg.contains(" spent ") ||
-                lowerMsg.contains("paid to") ||
-                lowerMsg.contains("deducted")
-        val isIncome = lowerMsg.contains("credited to") ||
-                lowerMsg.contains("credited your") ||
-                lowerMsg.contains("credited in") ||
-                lowerMsg.contains("received in") ||
-                lowerMsg.contains("deposited")
+        // LAYER 4 — TRANSACTION KEYWORD VALIDATION (Indian Bank Optimized)
+        // We use Regex with word boundaries (\b) to ensure "credit" doesn't match "credit limit"
+        
+        val expenseRegex = Regex("\\b(debited|spent|paid|deducted|withdrawn|txn|transaction|purchase|dr)\\b")
+        val incomeRegex = Regex("\\b(credited|received|deposited|refunded|cr|added)\\b")
+
+        val isExpense = expenseRegex.containsMatchIn(lowerMsg) && 
+                        !lowerMsg.contains("credit limit") && 
+                        !lowerMsg.contains("request")
+        
+        val isIncome = incomeRegex.containsMatchIn(lowerMsg) && 
+                       !lowerMsg.contains("outstanding") &&
+                       !lowerMsg.contains("due")
 
         if (!isExpense && !isIncome) {
             Log.d(TAG, "SMS REJECTED (no transaction keyword) from $sender")
             return null
         }
 
-        val type = if (isIncome) ExpenseType.INCOME else ExpenseType.EXPENSE
+        // Secondary check: If both match (rare), prioritize Expense unless "refund" or "salary" is present
+        val type = when {
+            lowerMsg.contains("refund") || lowerMsg.contains("salary") -> ExpenseType.INCOME
+            isExpense -> ExpenseType.EXPENSE
+            else -> ExpenseType.INCOME
+        }
 
         // LAYER 5 — AMOUNT EXTRACTION
         val amountRegex = Regex("(?i)(?:₹|rs\\.?|inr)\\s*([0-9,]+(?:\\.[0-9]+)?)")
